@@ -1,0 +1,14 @@
+theme:
+  m_font_size: 15,000000
+  m_font_size_header_0: 19,000000
+  m_font_size_header_1: 23,000000
+  m_font_size_header_2: 27,000000
+  m_big_font_size: 18,000000
+  UI_theme: 0
+  window_border: false
+  highlited_window_bg: 0.5700 0.5700 0.5700 1.0000
+  default_item_width: 200,000000
+  main_color: 0.0000 0.4088 1.0000 1.0000
+  action_color_gray_default: 0.1500 0.1500 0.1500 1.0000
+  action_color_gray_hover: 0.2000 0.2000 0.2000 1.0000
+  action_color_gray_active: 0.2500 0.2500 0.2500 1.0000

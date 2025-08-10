@@ -1,0 +1,59 @@
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker files
+*.ilk
+
+# Debugger Files
+*.pdb
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# debug information files
+*.dwo
+
+
+# generated files
+.vscode/
+.vs/
+bin/
+bin-int/
+scripts/__pycache__/
+scripts/linux/__pycache__/
+scripts/windows/__pycache__/
+*.make
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+vendor/premake/
+vendor/glew/
+Makefile

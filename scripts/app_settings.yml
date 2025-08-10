@@ -1,0 +1,6 @@
+general_settings:
+  name: application_template
+  display_name: Application Template
+  description: A simple application template. Able to display applications with ImGui and ImPlot
+  logo_path: assets/images/logo.png
+  project_version: 0 0 0

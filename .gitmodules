@@ -1,0 +1,12 @@
+[submodule "vendor/imgui"]
+	path = vendor/imgui
+	url = git@github.com:Mich-Dich/imgui.git
+[submodule "vendor/glfw"]
+	path = vendor/glfw
+	url = git@github.com:Mich-Dich/glfw.git
+[submodule "vendor/glm"]
+	path = vendor/glm
+	url = git@github.com:g-truc/glm.git
+[submodule "vendor/implot"]
+	path = vendor/implot
+	url = git@github.com:epezent/implot.git

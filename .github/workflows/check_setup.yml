@@ -1,0 +1,68 @@
+name: Cross-Platform Setup Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ubuntu-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+          
+      - name: Show Linux version
+        run: |
+          echo "========= OS VERSION ========="
+          cat /etc/os-release
+          echo "========= KERNEL VERSION ========="
+          uname -a
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          
+      - name: Run setup.py
+        run: python setup.py
+        env:
+          CI: "true"
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Build project (Debug)
+        run: make -j -k
+
+      - name: Build project (Release with Debug info)
+        run: make config=relwithdebinfo_x64 -j -k
+
+  windows-test:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          
+      - name: Show Windows version
+        run: |
+          echo "========= WINDOWS VERSION ========="
+          systeminfo | findstr /B /C:"OS Name" /C:"OS Version"
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          
+      - name: Setup Visual Studio
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Run setup.py
+        run: python setup.py
+        env:
+          CI: "true"
+          PYTHONPATH: ${{ github.workspace }}
+
+      - name: Build project (Debug)
+        run: msbuild application.sln /p:Configuration=Debug
