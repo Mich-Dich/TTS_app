@@ -74,7 +74,7 @@ namespace AT {
     void application::run() {
     
         // ---------------------------------------- finished setup ----------------------------------------
-        m_dashboard->init();
+        ASSERT(m_dashboard->init(), "", "Failed user setup process");
 
         m_renderer->set_state(system_state::active);
         s_running = true;
@@ -92,7 +92,7 @@ namespace AT {
         }
     
         LOG(Trace, "Exiting main run loop")
-        m_dashboard->shutdown();
+        ASSERT(m_dashboard->shutdown(), "", "Failed user shutdown process");
     }
     
     // ==================================================================== PUBLIC ====================================================================

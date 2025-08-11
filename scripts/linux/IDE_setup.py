@@ -72,6 +72,16 @@ def detect_IDEs():
     
     return IDEs
 
+
+def print_hints(selected_ide, build_config):
+
+    if "VSCode" in selected_ide:
+        utils.print_c("\nVSCode usage", "blue")
+        print("  Build the project:                 Ctrl+Shift+B (runs 'Clean & Build')")
+        print("  Launch the application:            F5 (runs the debugger with selected config)")
+
+    # TODO: add more prinit messages for other IDEs
+
         
 def prompt_ide_selection():
     
@@ -132,16 +142,16 @@ timestamp=$(date '+%Y-%m-%d-%H:%M:%S')
 stage_name="{application_name}_${{build_config}}_${{timestamp}}"
 STAGE_DIR="{bin_dir}/${{stage_name}}"
 
-echo "------ Clearing previous artifacts (trash at: $STAGE_DIR) ------"
-mkdir -p "$STAGE_DIR"
+# echo "------ Clearing previous artifacts (trash at: $STAGE_DIR) ------"
+# mkdir -p "$STAGE_DIR"
 
-# move all previous artifacts into staging (ignore missing)
-mv "{bin_dir}/{application_name}"             "$STAGE_DIR/" 2>/dev/null || true
+# # move all previous artifacts into staging (ignore missing)
+# mv "{bin_dir}/{application_name}"             "$STAGE_DIR/" 2>/dev/null || true
 
-# trash the staging directory and Makefiles
-gio trash "$STAGE_DIR" --force || true
-cd "{project_root}"
-find . -name "Makefile" -delete
+# # trash the staging directory and Makefiles
+# gio trash "$STAGE_DIR" --force || true
+# cd "{project_root}"
+# find . -name "Makefile" -delete
 
 echo "------ Regenerating Makefiles and rebuilding ------"
 ./vendor/premake/premake5 gmake2
@@ -242,6 +252,3 @@ echo "------ Done ------"
         json.dump(cpp_props, f, indent=4)
 
     print("VSCode integration files generated in .vscode/")
-    utils.print_c("\nVSCode usage", "blue")
-    print("  Build the project:                 Ctrl+Shift+B (runs 'Clean & Build')")
-    print("  Launch the application:            F5 (runs the debugger with selected config)")
