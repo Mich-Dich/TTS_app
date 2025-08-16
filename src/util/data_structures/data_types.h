@@ -48,7 +48,7 @@ typedef unsigned long long handle;  				// Generic handle type for OS resources
 #define PROJECT_PATH				application::get().get_project_path()
 #define PROJECT_NAME				application::get().get_project_data().name
 
-#define ENGINE_CONTENT_PATH			util::get_executable_path().parent_path() / "assets"
+#define CONTENT_PATH				util::get_executable_path() / "assets"
 
 
 namespace AT {

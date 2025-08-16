@@ -84,7 +84,8 @@ namespace AT::UI {
 	// @return The mouse interaction state (e.g., hovered, clicked, held).
 	mouse_interation get_mouse_interation_on_window();
 
-	void wrap_text(std::string& text, f32 wrap_width, int max_lines = -1);
+	// 
+	std::string wrap_text(const std::string& text, f32 wrap_width, int max_lines = -1);
 
 	// @brief Wraps text at underscores to fit within a specified width.
 	// @param [text] The text to wrap.

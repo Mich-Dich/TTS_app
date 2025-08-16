@@ -13,6 +13,7 @@
 
 #include "pannel_collection.h"
 
+
 namespace AT::UI {
 
 	bool is_holvering_window() {
@@ -131,83 +132,144 @@ namespace AT::UI {
 	FORCEINLINE bool is_delim_char(char c) { return c==' '||c=='_'||c=='-'||c=='/'||c=='\\'||c=='.'; }
 
 
-	void wrap_text(std::string& string, f32 wrap_width, int max_lines) {
+	
+	std::string wrap_text(const std::string& str, float wrap_width, int max_lines) {
+		
+		if (max_lines <= 0)
+			return {};
 
-		size_t orig = string.size();
-		string.reserve(orig * 2 + 16);
-		size_t read_pos   = 0, write_pos = 0;
-		size_t line_start = 0;
-		size_t last_delim = std::string::npos;
-		int    line_count = 0;
-	
-		// SIMD constants
-		// __m128i space  = _mm_set1_epi8(' ');
-		// __m128i uscore = _mm_set1_epi8('_');
-		// __m128i dash   = _mm_set1_epi8('-');
-		// __m128i slash  = _mm_set1_epi8('/');
-		// __m128i bslash = _mm_set1_epi8('\\');
-		// __m128i dot    = _mm_set1_epi8('.');
-	
-		auto insert_char = [&](size_t pos, char c) {
-			string.insert(string.begin() + pos, c);
-			write_pos++;
+		const int max_chars = math::max(static_cast<int>(std::floor(wrap_width)), 1);
+
+		auto is_break_char = [](char c) {
+			static const std::string breaks = " ,.\"#/";
+			return breaks.find(c) != std::string::npos;
 		};
-	
-		while (read_pos < string.size()) {
-			size_t rem   = string.size() - read_pos;
-			size_t chunk = rem >= 16 ? 16 : rem;
-			// __m128i block = _mm_loadu_si128((__m128i*)(string.data()+read_pos));
-			// __m128i m = _mm_or_si128(
-			// 	_mm_or_si128(_mm_cmpeq_epi8(block, space),  _mm_cmpeq_epi8(block, uscore)),
-			// 	_mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(block, dash),
-			// 							  _mm_cmpeq_epi8(block, slash)),
-			// 				 _mm_or_si128(_mm_cmpeq_epi8(block, bslash),
-			// 							  _mm_cmpeq_epi8(block, dot)))
-			// );
-	
-			for (size_t i = 0; i < chunk; i++) {
+		
+		std::string result{};								// final result
+		std::istringstream iss(str);
+		std::string orig_line{};
+    	int current_line_count = 0;
+		int break_char = 0;
+		while (std::getline(iss, orig_line, '\n')) {
 
-				char c = string[read_pos + i];
-				if (write_pos != read_pos + i) string[write_pos] = c;
-					write_pos++;
-				if (is_delim_char(c))
-					last_delim = write_pos;
-	
-				// Measure only when potential overflow:
-				ImVec2 string_size = ImGui::CalcTextSize(string.c_str() + line_start, string.c_str() + write_pos);
-				if (string_size.x > wrap_width) {
-					// bool done = false;
-	
-					// If next line would exceed max_lines, ellipsize THIS line instead of breaking:
-					if (max_lines > 0 && line_count + 1 == max_lines) {
-						size_t end = write_pos;															// find end-of-line = write_pos
-						while (end > line_start && ImGui::CalcTextSize(string.c_str()+line_start, string.c_str()+end).x + ImGui::CalcTextSize("...").x > wrap_width)			// back up so we can fit "..."
-							--end;
-
-						string.replace(end, std::string::npos, "...");									// replace tail with "..."
-						string.resize(end + 3);															// truncate everything after
-						return;
-					}
-	
-					if (last_delim != std::string::npos && last_delim > line_start) {					// Otherwise do normal break
-						insert_char(last_delim, '\n');
-						line_start = last_delim + 1;
-					} else {																			// forced break: replace last char with '-' then newline
-						size_t brk = write_pos - 1;
-						string[brk] = '-';
-						insert_char(brk+1, '\n');
-						line_start = brk + 2;
-					}
-					line_count++;
-					last_delim = std::string::npos;
-					// done = false; 																		// continue processing rest
-					break;
-				}
+			if (orig_line.empty()) {
+				continue;
 			}
-			read_pos += chunk;
+
+			if (orig_line.length() < max_chars) {
+
+				result.push_back('\n');
+				result.append(orig_line);
+				continue;
+			}
+
+            size_t end = 0, start = 0, break_pos = 0;
+			const size_t line_length = orig_line.length();
+			while (line_length - start > max_chars) {							// while remaining line length exceeds max_chars: chop the line down
+
+				bool found = false;
+				for (break_pos = end; break_pos >= start; break_pos--) {		// find nearest break character to end of line (search from end)
+					if (is_break_char(orig_line[break_pos])) {
+						found = true;
+						break;
+					}
+				}
+
+				result.push_back('\n');
+				result.append(orig_line.substr(start, break_pos - start));
+				
+				start = break_pos;					// start where last iteration left off
+				end = break_pos + max_chars;		// set maximal line length
+			}
+
+			if ( (line_length - start) > 0 ) {									// append last remains of the line that is to short to be chopped
+
+				result.push_back('\n');
+				result.append(orig_line.substr(start, line_length));
+			}
+			
 		}
-		string.resize(write_pos);
+		return result;
 	}
+
+
+	// void wrap_text(std::string& string, f32 wrap_width, int max_lines) {
+
+	// 	size_t orig = string.size();
+	// 	string.reserve(orig * 2 + 16);
+	// 	size_t read_pos   = 0, write_pos = 0;
+	// 	size_t line_start = 0;
+	// 	size_t last_delim = std::string::npos;
+	// 	int    line_count = 0;
+	
+	// 	// SIMD constants
+	// 	// __m128i space  = _mm_set1_epi8(' ');
+	// 	// __m128i uscore = _mm_set1_epi8('_');
+	// 	// __m128i dash   = _mm_set1_epi8('-');
+	// 	// __m128i slash  = _mm_set1_epi8('/');
+	// 	// __m128i bslash = _mm_set1_epi8('\\');
+	// 	// __m128i dot    = _mm_set1_epi8('.');
+	
+	// 	auto insert_char = [&](size_t pos, char c) {
+	// 		string.insert(string.begin() + pos, c);
+	// 		write_pos++;
+	// 	};
+	
+	// 	while (read_pos < string.size()) {
+	// 		size_t rem   = string.size() - read_pos;
+	// 		size_t chunk = rem >= 16 ? 16 : rem;
+	// 		// __m128i block = _mm_loadu_si128((__m128i*)(string.data()+read_pos));
+	// 		// __m128i m = _mm_or_si128(
+	// 		// 	_mm_or_si128(_mm_cmpeq_epi8(block, space),  _mm_cmpeq_epi8(block, uscore)),
+	// 		// 	_mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(block, dash),
+	// 		// 							  _mm_cmpeq_epi8(block, slash)),
+	// 		// 				 _mm_or_si128(_mm_cmpeq_epi8(block, bslash),
+	// 		// 							  _mm_cmpeq_epi8(block, dot)))
+	// 		// );
+	
+	// 		for (size_t i = 0; i < chunk; i++) {
+
+	// 			char c = string[read_pos + i];
+	// 			if (write_pos != read_pos + i) string[write_pos] = c;
+	// 				write_pos++;
+	// 			if (is_delim_char(c))
+	// 				last_delim = write_pos;
+	
+	// 			// Measure only when potential overflow:
+	// 			ImVec2 string_size = ImGui::CalcTextSize(string.c_str() + line_start, string.c_str() + write_pos);
+	// 			if (string_size.x > wrap_width) {
+	// 				// bool done = false;
+	
+	// 				// If next line would exceed max_lines, ellipsize THIS line instead of breaking:
+	// 				if (max_lines > 0 && line_count + 1 == max_lines) {
+	// 					size_t end = write_pos;															// find end-of-line = write_pos
+	// 					while (end > line_start && ImGui::CalcTextSize(string.c_str()+line_start, string.c_str()+end).x + ImGui::CalcTextSize("...").x > wrap_width)			// back up so we can fit "..."
+	// 						--end;
+
+	// 					string.replace(end, std::string::npos, "...");									// replace tail with "..."
+	// 					string.resize(end + 3);															// truncate everything after
+	// 					return;
+	// 				}
+	
+	// 				if (last_delim != std::string::npos && last_delim > line_start) {					// Otherwise do normal break
+	// 					insert_char(last_delim, '\n');
+	// 					line_start = last_delim + 1;
+	// 				} else {																			// forced break: replace last char with '-' then newline
+	// 					size_t brk = write_pos - 1;
+	// 					string[brk] = '-';
+	// 					insert_char(brk+1, '\n');
+	// 					line_start = brk + 2;
+	// 				}
+	// 				line_count++;
+	// 				last_delim = std::string::npos;
+	// 				// done = false; 																		// continue processing rest
+	// 				break;
+	// 			}
+	// 		}
+	// 		read_pos += chunk;
+	// 	}
+	// 	string.resize(write_pos);
+	// }
 
 	
 	std::string wrap_text_at_underscore(const std::string& text, float wrap_width) {
