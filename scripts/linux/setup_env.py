@@ -11,7 +11,7 @@ class env_configuration:
         "debian": {
             "base_packages": [
                 "build-essential", "cmake", "libgl1-mesa-dev", "libglfw3-dev",
-                "libglew-dev", "libxinerama-dev", "libxcursor-dev",
+                "libglew-dev", "libxinerama-dev", "libxcursor-dev", "pulseaudio-utils",
                 "libxi-dev", "xorg-dev", "pkg-config", "qtbase5-dev", "git"
             ]
         },
@@ -161,7 +161,7 @@ class env_configuration:
             return cls.install_packages_auto(packages, distro_id)
             
         # Prompt user in interactive mode
-        utils.print_c("Packages required for engine development:", "blue")
+        utils.print_c("Packages required for development:", "blue")
         for pkg in packages:
             print(f"  - {pkg}")
             

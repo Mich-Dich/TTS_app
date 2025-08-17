@@ -13,7 +13,19 @@ typedef struct _object PyObject;
 namespace AT {
 
     class event;
+    struct input_field {
+        std::string                 content{};
+        bool                        generating = false;
+        bool                        playing_audio = false;
+        UUID                        ID{};
+    };
+    struct section {
 
+        std::string                 title{};
+        std::vector<input_field>    input_fields{};
+    };
+    
+    
     class dashboard {
     public:
 
@@ -27,37 +39,33 @@ namespace AT {
 
         void on_event(event& event);
 
-		DEFAULT_GETTER(ref<image>,				generate_icon)
-		DEFAULT_GETTER(ref<image>,				audio_icon)
-
     private:
 
-        void generate_audio_async(const std::string& text, const std::string& output_path);
-        void play_audio(const std::string& path);
-        
-        std::atomic<bool>               m_is_generating = false;
-        std::future<void>               m_worker_future;
-        std::future<bool>               m_generation_future;
-
+        // UI
+        void draw_section(int section_index);
+    
         // Python integration
         bool initialize_python();
         void finalize_python();
         bool call_python_generate_tts(const std::string& text, const std::string& output_path);
-        void draw_section(int section_index);
         void generation_worker();
-        void play_audio(std::filesystem::path audio_path);
 
-        struct input_field {
-            std::string                 content{};
-            bool                        generating = false;
-            UUID                        ID{};
-        };
-        struct section {
+        // audio
+        void play_audio(input_field& field);
+        void stop_audio();
 
-            std::string                 title{};
-            std::vector<input_field>    input_fields{};
-        };
-        
+    #ifdef PLATFORM_LINUX
+        pid_t                           m_audio_pid = 0;
+        std::atomic<bool>               m_audio_playing{false};
+        std::thread                     m_audio_monitor;
+    #endif
+        u64                             m_current_audio_field = 0;
+
+        std::atomic<bool>               m_is_generating = false;
+        std::future<void>               m_worker_future;
+        std::future<bool>               m_generation_future;
+
+
         std::vector<section>            m_sections{};
         std::queue<UUID>                m_generation_queue{};
         std::mutex                      m_queue_mutex;
@@ -72,6 +80,7 @@ namespace AT {
         std::atomic<bool>               m_shutting_down = false;
 		ref<image>						m_generate_icon;
 		ref<image>						m_audio_icon;
+		ref<image>						m_stop_icon;
 
     };
 }

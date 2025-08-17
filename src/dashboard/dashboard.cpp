@@ -2,6 +2,10 @@
 #include "util/pch.h"
 
 #include <Python.h>
+#ifdef PLATFORM_LINUX
+    #include <sys/wait.h>   // For waitpid()
+    #include <unistd.h>     // For fork(), execvp()
+#endif
 
 #include <imgui/imgui.h>
 
@@ -64,6 +68,7 @@ namespace AT {
 #define LOAD_ICON(name)			m_##name##_icon = create_ref<image>(icon_path / #name ".png", image_format::RGBA)
 		LOAD_ICON(generate);
 		LOAD_ICON(audio);
+		LOAD_ICON(stop);
 #undef	LOAD_ICON
 
     }
@@ -76,6 +81,7 @@ namespace AT {
 
         m_generate_icon.reset();
         m_audio_icon.reset();
+        m_stop_icon.reset();
     }
 
 
@@ -163,11 +169,10 @@ namespace AT {
             // Left panel (fixed width)
             ImGui::BeginChild("LeftPanel", ImVec2(left_width, content_size.y), true);
             {
-                // Left panel content
-                if (ImGui::Button("Generate Audio")) {
-                    generate_audio_async("example text", 
-                        (util::get_executable_path() / "output.wav").generic_string());
-                }
+                // // Left panel content
+                // if (ImGui::Button("Generate Audio")) {
+                //     generate_audio_async("example text", (util::get_executable_path() / "output.wav").generic_string());
+                // }
 
                 ImGui::SliderFloat("Voice Speed", &m_voice_speed, 0.5f, 2.0f);
                 if (ImGui::BeginCombo("Voice Type", m_voice)) {
@@ -267,12 +272,11 @@ namespace AT {
             const bool has_audio = std::filesystem::exists(audio_path);
 
             if (!has_audio)      ImGui::BeginDisabled();
-            if (ImGui::ImageButton("##play_audio", m_audio_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
-                
-                if (has_audio)
-                    play_audio(audio_path.string());
-                
-            }
+            if (ImGui::ImageButton("##play_audio", (field.playing_audio) ? m_stop_icon->get() : m_audio_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1)))
+                if (field.playing_audio)
+                    stop_audio();
+                else
+                    play_audio(field);            // can only be pressed if audio found
             if (!has_audio)      ImGui::EndDisabled();
 
             if (field_generating)
@@ -287,7 +291,7 @@ namespace AT {
 
             if (i < sec.input_fields.size() -1)  {
 
-                ImGui::SameLine(0, (i) ? -1 : 29);
+                ImGui::SameLine(0, (i) ? -1 : 29);                              // move "down" button for first row
                 if (ImGui::Button("v"))
                     std::swap(sec.input_fields[i], sec.input_fields[i +1]);
             }
@@ -370,6 +374,9 @@ namespace AT {
         });
     }
 
+    // --------------------------------------------------------------------------------------------------------------
+    // PYTHON
+    // --------------------------------------------------------------------------------------------------------------
 
     bool dashboard::initialize_python() {
 
@@ -442,47 +449,117 @@ namespace AT {
         return success;
     }
 
+    // --------------------------------------------------------------------------------------------------------------
+    // AUDIO
+    // --------------------------------------------------------------------------------------------------------------
 
-    void dashboard::generate_audio_async(const std::string& text, const std::string& output_path) {
+    void dashboard::play_audio(input_field& field) {
+        const std::filesystem::path audio_path = util::get_executable_path() / "audio" / (util::to_string(field.ID) + ".wav");
         
-        if (m_is_generating || m_shutting_down)
-            return;
-        
-        m_is_generating = true;
-        m_generation_status = "Generating audio...";
-        m_generation_future = std::async(std::launch::async, [this, text, output_path]() {
-            
-            LOG(Trace, "generating audio for [" << text << "] to this location [" << output_path << "]")
-            bool success = false;
-            try {
-                success = call_python_generate_tts(text, output_path);
-            } catch (const std::exception& e) {
-                LOG(Error, "Exception in TTS generation: " << e.what())
-                m_generation_status = "Generation error!";
-            }
-            
-            if (!m_shutting_down) {
-                m_is_generating = false;
+    #ifdef PLATFORM_LINUX
+        stop_audio(); // Stop any existing playback
+        m_current_audio_field = static_cast<u64>(field.ID);
+        field.playing_audio = true;
+
+        const std::vector<std::vector<std::string>> commands = {
+            {"paplay", audio_path.string()},
+            {"aplay", "-D", "default", audio_path.string()},
+            {"mpg123", audio_path.string()}
+        };
+
+        for (const auto& cmd : commands) {
+            pid_t pid = fork();
+            if (pid == 0) {
+                // Child process: Redirect output and execute player
+                freopen("/dev/null", "w", stdout);
+                freopen("/dev/null", "w", stderr);
                 
-                if (success) {
-                    play_audio(output_path);
-                    m_generation_status = "Audio generated successfully!";
-                } else
-                    m_generation_status = "Audio generation failed!";
+                // Prepare arguments for execvp
+                std::vector<char*> args;
+                for (const auto& arg : cmd) {
+                    args.push_back(const_cast<char*>(arg.c_str()));
+                }
+                args.push_back(nullptr);
+                
+                execvp(args[0], args.data());
+                _exit(EXIT_FAILURE); // Exit if exec fails
             }
-            
-            return success;
-        });
+            else if (pid > 0) {
+                // Parent process: Check if player started successfully
+                int status;
+                usleep(10000); // Brief delay to catch quick failures
+                if (waitpid(pid, &status, WNOHANG) == 0) {
+                    m_audio_pid = pid;
+                    m_audio_playing = true;
+                    
+                    // Start monitor thread to detect completion
+                    m_audio_monitor = std::thread([this, pid, audio_path, id = field.ID]() {
+                        // Wait for the audio process to finish
+                        int status;
+                        waitpid(pid, &status, 0);
+                        
+                        // Only log if we're tracking this specific process
+                        if (m_audio_playing && m_audio_pid == pid) {
+
+                            if (m_current_audio_field) {        // make sure we need to reset at all
+                                bool found = false;
+                                for (size_t section_index = 0; section_index < m_sections.size(); section_index++) {
+                                    for (size_t field_index = 0; field_index < m_sections[section_index].input_fields.size(); field_index++) {
+                                        if (m_current_audio_field == m_sections[section_index].input_fields[field_index].ID) {
+                                            m_sections[section_index].input_fields[field_index].playing_audio = false;
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                    if (found) break;
+                                }
+                                VALIDATE(found, , "", "Could not reset [playing_audio] for corresponding to ID [" << m_current_audio_field << "]")
+                                m_current_audio_field = 0;
+                            }
+                            
+                            m_audio_playing = false;
+                        }
+                    });
+                    m_audio_monitor.detach();
+                    
+                    return;
+                }
+            }
+        }
+        LOG(Error, "No working audio player found for: " << audio_path.string());
+    #else
+        PlaySound(audio_path.string().c_str(), NULL, SND_FILENAME | SND_ASYNC);
+    #endif
     }
 
+    void dashboard::stop_audio() {
+        
+        if (m_current_audio_field) {        // make sure we need to reset at all
+        
+            bool found = false;
+            for (size_t section_index = 0; section_index < m_sections.size(); section_index++) {
+                for (size_t field_index = 0; field_index < m_sections[section_index].input_fields.size(); field_index++) {
+                    if (m_current_audio_field == m_sections[section_index].input_fields[field_index].ID) {
+                        m_sections[section_index].input_fields[field_index].playing_audio = false;
+                        found = true;
+                        break;
+                    }
+                }
+                if (found) break;
+            }
+            VALIDATE(found, , "Found and reset bool for [" << m_current_audio_field << "]", "Could not find bool for corresponding to ID [" << m_current_audio_field << "]")
+            m_current_audio_field = 0;
+        }
 
-    void dashboard::play_audio(const std::string& path) {
-
-    #ifdef PLATFORM_LINUX                           // Linux audio playback    
-        std::string command = "aplay \"" + path + "\" &";
-        std::system(command.c_str());
+    #ifdef PLATFORM_LINUX
+        if (m_audio_pid > 0) {
+            kill(m_audio_pid, SIGTERM);
+            waitpid(m_audio_pid, nullptr, 0); // Clean up zombie process
+            m_audio_pid = 0;
+            m_audio_playing = false;
+        }
     #else
-        PlaySound(path.c_str(), NULL, SND_FILENAME | SND_ASYNC);
+        PlaySound(NULL, NULL, 0); // Stop Windows audio
     #endif
     }
 
