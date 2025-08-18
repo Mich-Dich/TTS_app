@@ -21,6 +21,7 @@ namespace AT::render::open_GL {
     
         void draw_frame(float delta_time) override;
 		void set_window_size(const u32 width, const u32 height) override;
+        void draw_startup_UI(float delta_time) override;
 
         // -------- ImGui --------
         void imgui_init() override;

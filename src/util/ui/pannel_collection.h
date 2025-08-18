@@ -8,15 +8,15 @@
 #include "util/data_structures/string_manipulation.h"
 
 
-static FORCEINLINE ImVec2  operator*(const ImVec2& lhs, const float rhs) { return ImVec2(lhs.x * rhs, lhs.y * rhs); }
-static FORCEINLINE ImVec2  operator/(const ImVec2& lhs, const float rhs) { return ImVec2(lhs.x / rhs, lhs.y / rhs); }
+static FORCEINLINE ImVec2  operator*(const ImVec2& lhs, const f32 rhs) { return ImVec2(lhs.x * rhs, lhs.y * rhs); }
+static FORCEINLINE ImVec2  operator/(const ImVec2& lhs, const f32 rhs) { return ImVec2(lhs.x / rhs, lhs.y / rhs); }
 static FORCEINLINE ImVec2  operator+(const ImVec2& lhs, const ImVec2& rhs) { return ImVec2(lhs.x + rhs.x, lhs.y + rhs.y); }
 static FORCEINLINE ImVec2  operator-(const ImVec2& lhs, const ImVec2& rhs) { return ImVec2(lhs.x - rhs.x, lhs.y - rhs.y); }
 static FORCEINLINE ImVec2  operator*(const ImVec2& lhs, const ImVec2& rhs) { return ImVec2(lhs.x * rhs.x, lhs.y * rhs.y); }
 static FORCEINLINE ImVec2  operator/(const ImVec2& lhs, const ImVec2& rhs) { return ImVec2(lhs.x / rhs.x, lhs.y / rhs.y); }
 static FORCEINLINE ImVec2  operator-(const ImVec2& lhs) { return ImVec2(-lhs.x, -lhs.y); }
-static FORCEINLINE ImVec2& operator*=(ImVec2& lhs, const float rhs) { lhs.x *= rhs; lhs.y *= rhs; return lhs; }
-static FORCEINLINE ImVec2& operator/=(ImVec2& lhs, const float rhs) { lhs.x /= rhs; lhs.y /= rhs; return lhs; }
+static FORCEINLINE ImVec2& operator*=(ImVec2& lhs, const f32 rhs) { lhs.x *= rhs; lhs.y *= rhs; return lhs; }
+static FORCEINLINE ImVec2& operator/=(ImVec2& lhs, const f32 rhs) { lhs.x /= rhs; lhs.y /= rhs; return lhs; }
 static FORCEINLINE ImVec2& operator+=(ImVec2& lhs, const ImVec2& rhs) { lhs.x += rhs.x; lhs.y += rhs.y; return lhs; }
 static FORCEINLINE ImVec2& operator-=(ImVec2& lhs, const ImVec2& rhs) { lhs.x -= rhs.x; lhs.y -= rhs.y; return lhs; }
 static FORCEINLINE ImVec2& operator*=(ImVec2& lhs, const ImVec2& rhs) { lhs.x *= rhs.x; lhs.y *= rhs.y; return lhs; }
@@ -91,7 +91,7 @@ namespace AT::UI {
 	// @param [text] The text to wrap.
 	// @param [wrap_width] The maximum width before wrapping occurs.
 	// @return The wrapped text as a string.
-	std::string wrap_text_at_underscore(const std::string& text, float wrap_width);
+	std::string wrap_text_at_underscore(const std::string& text, f32 wrap_width);
 
 	// @brief Sets the position of the next ImGui window based on a predefined location.
 	// @param [location] The desired position of the window (e.g., center, top-left).
@@ -134,6 +134,16 @@ namespace AT::UI {
 	// @return True if the button is clicked, false otherwise.
 	bool toggle_button(const char* lable, bool& bool_var, const ImVec2& size = { 0, 0 });
 
+	// this is an adapted version from [zfedoran] from [https://github.com/ocornut/imgui/issues/1901]
+	void spinner(const char* label, f32 radius, int thickness, const ImU32& color);
+
+	// this is an adapted version from [alexsr] from [https://github.com/ocornut/imgui/issues/1901]
+	void loading_indicator_circle(const char* label, const f32 indicator_radius = 20, const int circle_count = 10, const f32 speed = 7.f, const ImVec4& main_color = ImGui::GetColorU32(ImGuiCol_ButtonHovered), const ImVec4& backdrop_color = ImGui::GetColorU32(ImGuiCol_FrameBg));
+
+	// ============================================================================================================
+	// TEXT
+	// ============================================================================================================
+
 	// @brief Draws text using a larger font.
 	// @param [text] The text to be drawn.
 	void big_text(const char* text, bool wrapped = false);
@@ -152,6 +162,10 @@ namespace AT::UI {
 	// @param [text] The text to display.
 	void anci_text(std::string_view text);
 
+	// ============================================================================================================
+	// UTIL
+	// ============================================================================================================
+
 	// @brief Displays a help marker with tooltip containing the provided description.
 	// @param [desc] The description text to be displayed in the tooltip.
 	void help_marker(const char* desc);
@@ -167,14 +181,6 @@ namespace AT::UI {
 	void shift_cursor_pos(const ImVec2 shift);
 
 	void progressbar_with_text(const char* label, const char* progress_bar_text, f32 percent, f32 label_size = 50.f, f32 progressbar_size_x = 50.f, f32 progressbar_size_y = 1.f);
-
-	// @brief This function sets up an ImGui table with two columns, where the first column is resizable and the second column fills the remaining availabel area
-	// @brief CAUTION - you need to call UI::end_table() at the end of the table;
-	// @param [label] Is used to identify the table
-	bool begin_table(std::string_view label, bool display_name = true, ImVec2 size = ImVec2(0,0), f32 inner_width = 0.0f, bool set_columns_width = true, f32 columns_width_percentage = 0.5f);
-	
-	// @brief Ends the table started with UI::begin_table().
-	void end_table();
 
 	// @brief This function draws a custom frame with two separate sections: [left_side] and [right_side].
 	//          The width of the first column is specified by [width_left_side]. Both sections are contained within
@@ -198,6 +204,21 @@ namespace AT::UI {
 	// @return true if the search text was changed, false otherwise.
 	bool serach_input(const char* lable, std::string& search_text);
 
+	
+	void color_picker(ImVec4& color);
+
+	// ============================================================================================================
+	// TABLE
+	// ============================================================================================================
+
+	// @brief This function sets up an ImGui table with two columns, where the first column is resizable and the second column fills the remaining availabel area
+	// @brief CAUTION - you need to call UI::end_table() at the end of the table;
+	// @param [label] Is used to identify the table
+	bool begin_table(std::string_view label, bool display_name = true, ImVec2 size = ImVec2(0,0), f32 inner_width = 0.0f, bool set_columns_width = true, f32 columns_width_percentage = 0.5f);
+	
+	// @brief Ends the table started with UI::begin_table().
+	void end_table();
+
 	// @brief Renders an integer slider within a table row in an ImGui interface.
 	// 
 	// This function creates a row in an ImGui table, sets the label in the first column,
@@ -215,9 +236,6 @@ namespace AT::UI {
 	
 	
 	bool table_row_slider_color(std::string_view label, glm::vec4& value, f32 min_value = 0.f, f32 max_value = 1.f, ImGuiInputTextFlags flags = ImGuiInputTextFlags_None);
-
-	
-	void color_picker(ImVec4& color);
 
 
 	// @brief Renders a table row with two columns, each containing custom content.

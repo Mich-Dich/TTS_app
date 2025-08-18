@@ -29,6 +29,7 @@ namespace AT::render {
 		DEFAULT_GETTER(glm::ivec2,	                                    window_size)
 		DEFAULT_GETTER(glm::ivec2,	                                    viewport_size)
 
+        virtual void draw_startup_UI(float delta_time) = 0;
         virtual void draw_frame(float delta_time) = 0;
         virtual void set_window_size(const u32 width, const u32 height) = 0;                    // resize application window
 	    virtual void resource_free() = 0;

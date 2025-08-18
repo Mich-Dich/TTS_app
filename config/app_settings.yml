@@ -4,3 +4,4 @@ general_settings:
   description: A simple application template. Able to display applications with ImGui and ImPlot
   logo_path: assets/images/logo.png
   project_version: 0 0 0
+  long_startup_process: true

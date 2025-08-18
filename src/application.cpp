@@ -74,14 +74,47 @@ namespace AT {
     void application::run() {
     
         // ---------------------------------------- finished setup ----------------------------------------
-        ASSERT(m_dashboard->init(), "", "Failed user setup process");
+        bool long_startup_process = false;
+		AT::serializer::yaml(config::get_filepath_from_configtype(util::get_executable_path(), config::file::app_settings), "general_settings", AT::serializer::option::load_from_file)
+			.entry(KEY_VALUE(long_startup_process));
 
-        m_renderer->set_state(system_state::active);
-        s_running = true;
-        s_window->show_window(true);
-        s_window->poll_events();
-        start_fps_measurement();
+        if (long_startup_process) {
+
+            m_renderer->set_state(system_state::active);
+            s_running = true;
+            s_window->show_window(true);
+            start_fps_measurement();
+
+            std::atomic<bool> running_init = true;
+            std::future<bool> init_future = std::async(std::launch::async, [this, &running_init]() {
+                ASSERT(m_dashboard->init(), "", "Failed to init user process")
+                running_init = false;
+                return true;                            // return true if not crashing
+            });
+
+            while (running_init) {
     
+                s_window->poll_events();				// update internal state
+                m_renderer->draw_startup_UI(m_delta_time);
+                limit_fps();
+            }
+
+            if (!s_running) {                           // Handle early termination
+                init_future.wait();                     // Ensure thread finishes before shutdown
+                return;                                 // Skip main loop entirely
+            }
+
+        } else {
+
+            ASSERT(m_dashboard->init(), "", "Failed to init user process")
+            m_renderer->set_state(system_state::active);
+            s_running = true;
+            s_window->show_window(true);
+            s_window->poll_events();
+            start_fps_measurement();
+        }
+    
+        // ---------------------------------------- main loop ----------------------------------------
         while (s_running) {
     
             // PROFILE_SCOPE("run")

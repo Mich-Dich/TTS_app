@@ -8,6 +8,7 @@
 #endif
 
 #include <imgui/imgui.h>
+#include <imgui/imgui_internal.h>
 
 #include "events/event.h"
 #include "events/application_event.h"
@@ -69,7 +70,11 @@ namespace AT {
 		LOAD_ICON(generate);
 		LOAD_ICON(audio);
 		LOAD_ICON(stop);
+		LOAD_ICON(settings);
+		LOAD_ICON(library);
 #undef	LOAD_ICON
+
+        initialize_python();
 
     }
     
@@ -82,7 +87,10 @@ namespace AT {
         m_generate_icon.reset();
         m_audio_icon.reset();
         m_stop_icon.reset();
+        m_settings_icon.reset();
+        m_library_icon.reset();
     }
+
 
 
     // init will be called when every system is initalized
@@ -108,19 +116,22 @@ namespace AT {
         }
         
         std::filesystem::create_directories(util::get_executable_path() / "audio");
-
-        return initialize_python();
+        return true;
     }
 
     // shutdown will be called bevor any system is deinitalized
     bool dashboard::shutdown() {
 
+        // Acquire GIL if Python is initialized
+        PyGILState_STATE gstate = PyGILState_UNLOCKED;
+        if (Py_IsInitialized())
+            gstate = PyGILState_Ensure();
+
         if (m_worker_running) {                                         // Signal worker to stop
 
-            {                                                           // Clear queue
+            {
                 std::lock_guard<std::mutex> lock(m_queue_mutex);
-                while (!m_generation_queue.empty())
-                    m_generation_queue.pop();
+                m_generation_queue = {};
             }
             
             if (m_generation_future.valid())                            // Wait for worker to finish
@@ -147,6 +158,12 @@ namespace AT {
     }
 
 
+    void dashboard::on_event(event& event) {}
+
+    // --------------------------------------------------------------------------------------------------------------
+    // UI
+    // --------------------------------------------------------------------------------------------------------------
+
     void dashboard::draw(f32 delta_time) {
         auto viewport = ImGui::GetMainViewport();
         
@@ -155,44 +172,14 @@ namespace AT {
         ImGui::SetNextWindowSize(viewport->Size);
         ImGui::SetNextWindowViewport(viewport->ID);
         
-        ImGuiWindowFlags flags = 
-            ImGuiWindowFlags_NoDecoration | 
-            ImGuiWindowFlags_NoMove | 
-            ImGuiWindowFlags_NoSavedSettings;
-        
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
         ImGui::Begin("MainWindow", nullptr, flags);
         {
-            // Get available content region
-            ImVec2 content_size = ImGui::GetContentRegionAvail();
-            float left_width = math::min(200.0f, content_size.x * 0.3f);
-            
-            // Left panel (fixed width)
-            ImGui::BeginChild("LeftPanel", ImVec2(left_width, content_size.y), true);
-            {
-                // // Left panel content
-                // if (ImGui::Button("Generate Audio")) {
-                //     generate_audio_async("example text", (util::get_executable_path() / "output.wav").generic_string());
-                // }
-
-                ImGui::SliderFloat("Voice Speed", &m_voice_speed, 0.5f, 2.0f);
-                if (ImGui::BeginCombo("Voice Type", m_voice)) {
-                    if (ImGui::Selectable("am_onyx")) m_voice = "am_onyx";
-                    if (ImGui::Selectable("am_echo")) m_voice = "am_echo";
-                    ImGui::EndCombo();
-                }
-                
-                if (!m_generation_status.empty()) {
-                    ImGui::Text("%s", m_generation_status.c_str());
-                }
-            }
-            ImGui::EndChild();
-
-            UI::seperation_vertical();
-            
-            ImGui::SameLine();
-            
+            sidebar();
+                        
+            // const ImVec2 content_size = ImGui::GetContentRegionAvail();
             // Right panel (fills remaining space)
-            ImGui::BeginChild("RightPanel", ImVec2(0, content_size.y), true);
+            ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
             {
                 
                 // Draw sections
@@ -212,10 +199,166 @@ namespace AT {
     }
 
 
-    void dashboard::on_event(event& event) {}
+    void dashboard::draw_init_UI(f32 delta_time) {
+
+        ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+        
+        ImGui::Begin("Initialization", nullptr, window_flags);
+        {
+
+            ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("giant"));
+            const char* text = "Initializing...";
+            const float target_font_size = 50.0f;
+            ImVec2 base_text_size = ImGui::CalcTextSize(text);                                      // Calculate base text size at default font scale
+            float scale = (base_text_size.y > 0) ? target_font_size / base_text_size.y : 1.0f;      // Calculate required scale to reach target font size
+            ImVec2 available = ImGui::GetContentRegionAvail() * 0.9f;                               // Get available space with 10% margin
+            ImVec2 scaled_size = base_text_size * scale;                                            // Calculate scaled text size
+            
+            if (scaled_size.x > available.x || scaled_size.y > available.y) {                       // Adjust scale if needed to fit available space
+                float width_ratio = available.x / scaled_size.x;
+                float height_ratio = available.y / scaled_size.y;
+                scale *= (width_ratio < height_ratio) ? width_ratio : height_ratio;
+            }
+            
+            // Set font scale and calculate final position
+            ImGui::SetWindowFontScale(scale);
+            ImVec2 text_size = ImGui::CalcTextSize(text);
+            ImVec2 position = (ImGui::GetContentRegionAvail() - text_size) * 0.5f;
+            
+            ImGui::SetCursorPos(position);
+            ImGui::TextUnformatted(text);
+            ImGui::SetWindowFontScale(1.0f);
+            ImGui::PopFont();
+
+            UI::shift_cursor_pos((ImGui::GetContentRegionAvail().x / 2) - 30, 30);
+            UI::loading_indicator_circle("##loading_indicator", 30, 13, 5);
+
+        }
+        ImGui::End();
+    }
 
 
+    void dashboard::sidebar() {
 
+        // Get available content region
+        const ImVec2 content_size = ImGui::GetContentRegionAvail();
+        const float icon_size = 30.0f;
+
+    #define SECTION_HEADER(button, section_title)                UI::shift_cursor_pos(0.f, 5.f); ImGui::Image(button->get(), ImVec2(icon_size, icon_size), ImVec2(0, 0), ImVec2(1, 1));          \
+                ImGui::SameLine(); UI::shift_cursor_pos(10.f, 5.f); UI::big_text(section_title); UI::shift_cursor_pos(0.f, 20.f);
+        
+        switch (m_sidebar_status) {
+
+            case sidebar_status::menu: {
+
+                const f32 sidebar_width = 40.f;
+                const f32 padding_x = (sidebar_width - icon_size - 10) / 2;
+                const f32 content_width = sidebar_width - (2 * padding_x);
+                const ImVec2 button_dims(content_width, content_width);
+                auto draw_sidebar_button = [&](const char* label, sidebar_status section, ref<image> icon) {
+
+            	    ImGui::PushStyleColor(ImGuiCol_Button, UI::get_default_gray_ref());
+            	    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, UI::get_action_color_gray_hover_ref());
+            	    ImGui::PushStyleColor(ImGuiCol_ButtonActive, UI::get_action_color_gray_active_ref());
+            
+            	    if (ImGui::Button(label, button_dims))
+            	    	m_sidebar_status = section;
+            
+            	    ImVec2 button_min = ImGui::GetItemRectMin();
+            	    ImVec2 button_max = ImGui::GetItemRectMax();
+            	    ImVec2 button_center = ImVec2((button_min.x + button_max.x) * 0.5f, (button_min.y + button_max.y) * 0.5f);
+            
+            	    if (icon) {				// Draw icon centered horizontally, near top
+            	    	ImVec2 icon_pos(button_center.x - icon_size * 0.5f, button_min.y + button_dims.y * 0.15f);
+            	    	ImGui::SetCursorScreenPos(icon_pos);
+            	    	ImGui::Image(icon->get(), ImVec2(icon_size, icon_size), ImVec2(0, 0), ImVec2(1, 1));
+            	    }
+            
+            	    ImGui::PopStyleColor(3);
+                };
+
+                ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
+                
+		        UI::shift_cursor_pos(0, 10);
+                draw_sidebar_button("##kokoro_settings", sidebar_status::kokoro_settings, m_settings_icon);
+		        
+                UI::shift_cursor_pos(0, 10);
+                draw_sidebar_button("##project_manager", sidebar_status::project_manager, m_library_icon);
+                
+            } break;
+
+            case sidebar_status::kokoro_settings: {
+
+                const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
+                ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
+               
+                SECTION_HEADER(m_settings_icon, "Kokoro settings");
+
+                UI::begin_table("kokoro_settings", false);
+                UI::table_row_slider("Voice Speed", m_voice_speed, .5f, 2.f, .05f);
+                UI::table_row([]() { ImGui::Text("Voice Type"); },
+                    [&]() {
+                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                        if (ImGui::BeginCombo("##Voice Type", m_voice, ImGuiComboFlags_HeightLarge)) {
+                        #define SELECTABLE(voice)       if (ImGui::Selectable(voice)) m_voice = voice;
+                            SELECTABLE("af_alloy")      SELECTABLE("af_aoede")      SELECTABLE("af_bella")      SELECTABLE("af_heart")
+                            SELECTABLE("af_jessica")    SELECTABLE("af_kore")       SELECTABLE("af_nicole")     SELECTABLE("af_nova")
+                            SELECTABLE("af_river")      SELECTABLE("af_sarah")      SELECTABLE("af_sky")        SELECTABLE("am_adam")
+                            SELECTABLE("am_echo")       SELECTABLE("am_eric")       SELECTABLE("am_fenrir")     SELECTABLE("am_liam")
+                            SELECTABLE("am_michael")    SELECTABLE("am_onyx")       SELECTABLE("am_puck")       SELECTABLE("am_santa")
+                            SELECTABLE("bf_alice")      SELECTABLE("bf_emma")       SELECTABLE("bf_isabella")   SELECTABLE("bf_lily")
+                            SELECTABLE("bm_daniel")     SELECTABLE("bm_fable")      SELECTABLE("bm_george")     SELECTABLE("bm_lewis")
+                            SELECTABLE("ef_dora")       SELECTABLE("em_alex")       SELECTABLE("em_santa")      SELECTABLE("ff_siwis")
+                            SELECTABLE("hf_alpha")      SELECTABLE("hf_beta")       SELECTABLE("hm_omega")      SELECTABLE("hm_psi")
+                            SELECTABLE("if_sara")       SELECTABLE("im_nicola")     SELECTABLE("jf_alpha")      SELECTABLE("jf_gongitsune")
+                            SELECTABLE("jf_nezumi")     SELECTABLE("jf_tebukuro")   SELECTABLE("jm_kumo")       SELECTABLE("pf_dora")
+                            SELECTABLE("pm_alex")       SELECTABLE("pm_santa")      SELECTABLE("zf_xiaobei")    SELECTABLE("zf_xiaoni")
+                            SELECTABLE("zf_xiaoxiao")   SELECTABLE("zf_xiaoyi")     SELECTABLE("zm_yunjian")    SELECTABLE("zm_yunxia")
+                            SELECTABLE("zm_yunxi")      SELECTABLE("zm_yunyang")
+                        #undef SELECTABLE()
+                            ImGui::EndCombo();
+                        }
+                    }
+                );
+                UI::end_table();
+
+                ImGui::Separator();
+                if (ImGui::Button("Back"))
+            	    m_sidebar_status = sidebar_status::menu;
+                
+            } break;
+            
+            case sidebar_status::project_manager: {
+
+                const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
+                ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
+               
+                SECTION_HEADER(m_library_icon, "Project Management");
+
+                
+                // TODO: add project manager controls (create/save/load/delete/...)
+
+
+                ImGui::Separator();
+                if (ImGui::Button("Back"))
+            	    m_sidebar_status = sidebar_status::menu;
+                
+            } break;
+
+            default: break;
+        }
+
+    #undef SECTION_HEADER()
+
+        ImGui::EndChild();
+        UI::seperation_vertical();
+        ImGui::SameLine();
+    }
 
 
     void dashboard::draw_section(int section_index) {
@@ -319,9 +462,9 @@ namespace AT {
         ImGui::PopID();
     }
 
-
-
-
+    // --------------------------------------------------------------------------------------------------------------
+    // PYTHON
+    // --------------------------------------------------------------------------------------------------------------
 
     void dashboard::generation_worker() {
 
@@ -374,9 +517,6 @@ namespace AT {
         });
     }
 
-    // --------------------------------------------------------------------------------------------------------------
-    // PYTHON
-    // --------------------------------------------------------------------------------------------------------------
 
     bool dashboard::initialize_python() {
 
@@ -418,7 +558,8 @@ namespace AT {
 
 
     void dashboard::finalize_python() {
-        PyEval_RestoreThread(m_python_thread_state);
+        
+        // PyEval_RestoreThread(m_python_thread_state);
         Py_XDECREF(m_py_generate_tts_function);
         Py_XDECREF(m_py_module);
         Py_Finalize();
@@ -428,10 +569,11 @@ namespace AT {
     bool dashboard::call_python_generate_tts(const std::string& text, const std::string& output_path) {
         
         PyGILState_STATE gil_state = PyGILState_Ensure();
-        PyObject* pArgs = PyTuple_New(2);
+        PyObject* pArgs = PyTuple_New(4);
         PyTuple_SetItem(pArgs, 0, PyUnicode_FromString(text.c_str()));
-        std::filesystem::path abs_path = std::filesystem::absolute(output_path);
-        PyTuple_SetItem(pArgs, 1, PyUnicode_FromString(abs_path.string().c_str()));
+        PyTuple_SetItem(pArgs, 1, PyUnicode_FromString(std::filesystem::absolute(output_path).string().c_str()));
+        PyTuple_SetItem(pArgs, 2, PyUnicode_FromString(m_voice));
+        PyTuple_SetItem(pArgs, 3, PyFloat_FromDouble(m_voice_speed));
         
         // Call function
         PyObject* pResult = PyObject_CallObject(m_py_generate_tts_function, pArgs);
@@ -531,6 +673,7 @@ namespace AT {
         PlaySound(audio_path.string().c_str(), NULL, SND_FILENAME | SND_ASYNC);
     #endif
     }
+
 
     void dashboard::stop_audio() {
         

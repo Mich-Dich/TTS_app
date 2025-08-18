@@ -94,6 +94,37 @@ namespace AT::render::open_GL {
         }
     }
 
+    
+    void GL_renderer::draw_startup_UI(float delta_time) {
+            
+        // execute_pending_commands();              // DISABLED: dont need custom shaders yet
+        
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        if (m_imgui_initalized) {
+
+            // ------ start new ImGui frame ------
+		    ImGui::SetCurrentContext(application::get().get_imgui_config_ref()->get_context_imgui());
+            ImGui_ImplOpenGL3_NewFrame();
+            ImGui_ImplGlfw_NewFrame();
+            ImGui::NewFrame();
+
+            application::get().get_dashboard()->draw_init_UI(delta_time);
+            
+            ImGui::EndFrame();
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            
+            // update other platform windows
+            GLFWwindow* backup_current_context = glfwGetCurrentContext();
+            ImGui::UpdatePlatformWindows();
+            ImGui::RenderPlatformWindowsDefault();
+            glfwMakeContextCurrent(backup_current_context);
+            glfwSwapBuffers(m_window->get_window());
+        }
+    }
+
     // ================================================ imgui ================================================
 
     void GL_renderer::imgui_init() {

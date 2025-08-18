@@ -107,7 +107,7 @@ namespace AT::UI {
 			m_fonts["header_1"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), m_font_size_header_1);
 			m_fonts["header_2"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), m_font_size_header_0);
 
-			m_fonts["giant"] =			io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Bold.ttf").string().c_str(), 30.f);
+			m_fonts["giant"] =			io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Bold.ttf").string().c_str(), 60.f);
 
 			//Inconsolata-Regular
 			m_fonts["monospace_regular"] = io.Fonts->AddFontFromFileTTF((Inconsolata_path / "Inconsolata-Regular.ttf").string().c_str(), m_font_size * 0.92f);

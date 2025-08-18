@@ -4,7 +4,7 @@ import traceback
 import soundfile as sf
 from kokoro_onnx import Kokoro
 
-def generate_tts(text: str, output_path: str) -> bool:
+def generate_tts(text: str, output_path: str, voice: str, speed: float) -> bool:
     try:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -14,11 +14,12 @@ def generate_tts(text: str, output_path: str) -> bool:
 
         # Create Kokoro instance
         tts_engine = Kokoro(model_path, voices_path)  # Instantiate here
+        print(f"generate audio with voice: \"{voice}\", speed: {speed}")  # Debug
         
         print(f"generate audio with model: {model_path}, voice: \"am_onyx\", speed: {voice_speed}")
         start_time = time.time()
         # Call create() on the INSTANCE
-        samples, sample_rate = tts_engine.create(text, voice="am_onyx", speed=voice_speed, lang="en-us")
+        samples, sample_rate = tts_engine.create(text, voice=voice, speed=speed, lang="en-us")
         sf.write(output_path, samples, sample_rate)
         generation_time = time.time() - start_time
 

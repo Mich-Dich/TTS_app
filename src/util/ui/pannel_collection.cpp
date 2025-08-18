@@ -133,7 +133,7 @@ namespace AT::UI {
 
 
 	
-	std::string wrap_text(const std::string& str, float wrap_width, int max_lines) {
+	std::string wrap_text(const std::string& str, f32 wrap_width, int max_lines) {
 		
 		if (max_lines <= 0)
 			return {};
@@ -148,15 +148,13 @@ namespace AT::UI {
 		std::string result{};								// final result
 		std::istringstream iss(str);
 		std::string orig_line{};
-    	int current_line_count = 0;
-		int break_char = 0;
 		while (std::getline(iss, orig_line, '\n')) {
 
 			if (orig_line.empty()) {
 				continue;
 			}
 
-			if (orig_line.length() < max_chars) {
+			if (orig_line.length() < (size_t)max_chars) {
 
 				result.push_back('\n');
 				result.append(orig_line);
@@ -165,12 +163,12 @@ namespace AT::UI {
 
             size_t end = 0, start = 0, break_pos = 0;
 			const size_t line_length = orig_line.length();
-			while (line_length - start > max_chars) {							// while remaining line length exceeds max_chars: chop the line down
+			while (line_length - start > (size_t)max_chars) {							// while remaining line length exceeds max_chars: chop the line down
 
-				bool found = false;
+				// bool found = false;
 				for (break_pos = end; break_pos >= start; break_pos--) {		// find nearest break character to end of line (search from end)
 					if (is_break_char(orig_line[break_pos])) {
-						found = true;
+						// found = true;
 						break;
 					}
 				}
@@ -272,12 +270,12 @@ namespace AT::UI {
 	// }
 
 	
-	std::string wrap_text_at_underscore(const std::string& text, float wrap_width) {
+	std::string wrap_text_at_underscore(const std::string& text, f32 wrap_width) {
 
 		std::stringstream ss(text);
 		std::string segment;
 		std::string wrapped_text;
-		float text_width = 0.0f;
+		f32 text_width = 0.0f;
 
 		// Split the text at underscores
 		while (std::getline(ss, segment, '_')) {
@@ -493,6 +491,75 @@ namespace AT::UI {
 		return result;
 	}
 
+
+	void spinner(const char* label, f32 radius, int thickness, const ImU32& color) {
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if (window->SkipItems)
+			return;
+		
+		const ImGuiContext& g = *GImGui;
+		const ImGuiStyle& style = g.Style;
+		const ImGuiID id = window->GetID(label);
+		const ImVec2 pos = window->DC.CursorPos;
+		const ImVec2 size((radius) * 2, (radius + style.FramePadding.y) * 2);
+		const ImRect bb(pos, ImVec2(pos.x + size.x, pos.y + size.y));
+		ImGui::ItemSize(bb, style.FramePadding.y);
+		if (!ImGui::ItemAdd(bb, id))
+			return;
+		
+		window->DrawList->PathClear();		// Render
+		
+		const int num_segments = 60;
+		const int start = abs(ImSin(g.Time * 1.8f) * (num_segments - 5));
+		const f32 a_min = IM_PI * 2.f * ((f32)start) / (f32)num_segments;
+		const f32 a_max = IM_PI * 2.f * ((f32)num_segments-3) / (f32)num_segments;
+		const ImVec2 centre = ImVec2(pos.x + radius, pos.y + radius + style.FramePadding.y);
+		for (int i = 0; i < num_segments; i++) {
+
+			const f32 a = a_min + ((f32)i / (f32)num_segments) * (a_max - a_min);
+			window->DrawList->PathLineTo(ImVec2(centre.x + ImCos(a + g.Time*8) * radius, centre.y + ImSin(a + g.Time*8) * radius));
+		}
+
+		window->DrawList->PathStroke(color, false, static_cast<f32>(thickness));
+    }
+	
+
+	void loading_indicator_circle(const char* label, const f32 indicator_radius, const int circle_count, const f32 speed, const ImVec4& main_color, const ImVec4& backdrop_color) {
+
+		ImGuiWindow* window = ImGui::GetCurrentWindow();
+		if (window->SkipItems)
+			return;
+
+		ImGuiContext& g = *GImGui;
+		const ImGuiID id = window->GetID(label);
+		const ImVec2 pos = window->DC.CursorPos;
+		const f32 circle_radius = indicator_radius / 15.0f;
+		const f32 updated_indicator_radius = indicator_radius - 4.0f * circle_radius;
+		const ImRect bb(pos, ImVec2(pos.x + indicator_radius * 2.0f, pos.y + indicator_radius * 2.0f));
+		ImGui::ItemSize(bb);
+		if (!ImGui::ItemAdd(bb, id))
+			return;
+		
+		const f32 t = g.Time;
+		const auto degree_offset = 2.0f * IM_PI / circle_count;
+		for (int i = 0; i < circle_count; ++i) {
+			const auto x = updated_indicator_radius * std::sin(degree_offset * i);
+			const auto y = updated_indicator_radius * std::cos(degree_offset * i);
+			const auto growth = std::max(0.0f, std::sin(t * speed - i * degree_offset));
+			ImVec4 color;
+			color.x = main_color.x * growth + backdrop_color.x * (1.0f - growth);
+			color.y = main_color.y * growth + backdrop_color.y * (1.0f - growth);
+			color.z = main_color.z * growth + backdrop_color.z * (1.0f - growth);
+			color.w = 1.0f;
+			window->DrawList->AddCircleFilled(ImVec2(pos.x + indicator_radius + x, pos.y + indicator_radius - y), circle_radius + growth * circle_radius, ImGui::GetColorU32(color));
+		}
+	}
+
+	// ============================================================================================================
+	// TEXT
+	// ============================================================================================================
+
 	void big_text(const char* text, bool wrapped) {
 
 		ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("regular_big"));
@@ -618,7 +685,7 @@ namespace AT::UI {
 		else {
 
 			const int gray = 8 + (index - 232) * 10;
-			const float intensity = gray / 255.0f;
+			const f32 intensity = gray / 255.0f;
 			return ImVec4(intensity, intensity, intensity, 1.0f);
 		}
 	}
@@ -817,7 +884,7 @@ namespace AT::UI {
 			// setup table and columns
 			if (size.x > 0.0f && set_columns_width) {
 
-				float column_width = size.x * columns_width_percentage;
+				f32 column_width = size.x * columns_width_percentage;
 				ImGui::TableSetupColumn("##one", ImGuiTableColumnFlags_NoHeaderLabel | ImGuiTableColumnFlags_WidthFixed, column_width);
 				ImGui::TableSetupColumn("##two", ImGuiTableColumnFlags_NoHeaderLabel | ImGuiTableColumnFlags_WidthStretch);
 			} else {
@@ -1071,9 +1138,9 @@ namespace AT::UI {
 				// drag source by default, unless specifying the ImGuiColorEditFlags_NoDragDrop flag.
 				if (ImGui::BeginDragDropTarget()) {
 					if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(IMGUI_PAYLOAD_TYPE_COLOR_3F))
-						memcpy((float*)&saved_palette[n], payload->Data, sizeof(float) * 3);
+						memcpy((f32*)&saved_palette[n], payload->Data, sizeof(f32) * 3);
 					if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload(IMGUI_PAYLOAD_TYPE_COLOR_4F))
-						memcpy((float*)&saved_palette[n], payload->Data, sizeof(float) * 4);
+						memcpy((f32*)&saved_palette[n], payload->Data, sizeof(f32) * 4);
 					ImGui::EndDragDropTarget();
 				}
 
@@ -1201,7 +1268,7 @@ namespace AT::UI {
 
 		ImGui::TableSetColumnIndex(1);
 
-		float column_width = progressbar_size_x;
+		f32 column_width = progressbar_size_x;
 		if (auto_resize)
 			if (ImGuiTable* table = ImGui::GetCurrentTable())
 				column_width = table->Columns[1].WidthGiven;

@@ -24,6 +24,19 @@ namespace AT {
         std::string                 title{};
         std::vector<input_field>    input_fields{};
     };
+
+    struct project {
+        std::string                 name{};
+        std::vector<section>        sections{};
+        std::string                 description;
+        bool                        saved = false; // visual flag
+    };
+
+    enum class sidebar_status {
+        menu = 0,
+        kokoro_settings,
+        project_manager,
+    };
     
     
     class dashboard {
@@ -38,7 +51,9 @@ namespace AT {
         bool shutdown();
 
         void on_event(event& event);
-
+        void draw_init_UI(f32 delta_time);
+	    void sidebar();
+        
     private:
 
         // UI
@@ -65,8 +80,10 @@ namespace AT {
         std::future<void>               m_worker_future;
         std::future<bool>               m_generation_future;
 
-
+        // project                         m_currnt_project{};
+        sidebar_status                  m_sidebar_status = sidebar_status::menu;
         std::vector<section>            m_sections{};
+
         std::queue<UUID>                m_generation_queue{};
         std::mutex                      m_queue_mutex;
         std::atomic<bool>               m_worker_running = false;
@@ -81,6 +98,8 @@ namespace AT {
 		ref<image>						m_generate_icon;
 		ref<image>						m_audio_icon;
 		ref<image>						m_stop_icon;
+		ref<image>						m_settings_icon;
+		ref<image>						m_library_icon;
 
     };
 }
