@@ -39,7 +39,7 @@ python3 setup.py
 
 During the first setup (which may take several minutes), you'll see this initialization screen while downloading the models and voices:
 
-<img src=".github/resources/initializing.png" alt="Initialization Screen" width="400">
+<img src=".github/resources/initializing.png" alt="Initialization Screen" width="300">
 
 The script will:
 1. Create Python virtual environment
