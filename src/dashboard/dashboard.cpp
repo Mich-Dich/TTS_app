@@ -17,6 +17,9 @@
 #include "application.h"
 #include "config/imgui_config.h"
 #include "util/ui/pannel_collection.h"
+#include "util/io/serializer_data.h"
+#include "util/io/serializer_yaml.h"
+#include "util/system.h"
 
 #include "dashboard.h"
 
@@ -32,38 +35,11 @@ namespace AT {
     dashboard::dashboard()
         : m_is_generating(false) {
 
-        // Section 1
-        section sec1;
-        sec1.title = "test section 000";
-        sec1.input_fields = {
-            {"Once upon a time in a land far, far away..."},
-            {"The quick brown fox jumps over the lazy dog"},
-            {"Hello world! This is a test of the text-to-speech system. "},
-            {"My implementation of Peter Shirley's Ray Tracing in One Weekend books using Vulkan and NVIDIA's RTX extension"}
-        };
-        
-        // Section 2
-        section sec2;
-        sec1.title = "test section 001";
-        sec2.input_fields = {
-            {"The rain in Spain falls mainly on the plain"},
-            {"To be or not to be, that is the question"},
-            {"All work and no play makes Jack a dull boy"}
-        };
-        
-        // Section 3
-        section sec3;
-        sec1.title = "test section 002";
-        sec3.input_fields = {
-            {"Four score and seven years ago our fathers brought forth..."},
-            {"Ask not what your country can do for you..."},
-            {"I have a dream that one day this nation will rise up..."},
-            {"The only thing we have to fear is fear itself"},
-            {"Tear down this wall!"},
-            {"Yes we can!"}
-        };
-        
-        m_sections = {sec1, sec2, sec3};
+    #if defined(PLATFORM_LINUX)
+        util::init_qt();
+    #endif
+
+        initialize_python();
 
 		const std::filesystem::path icon_path = CONTENT_PATH / "images";
 #define LOAD_ICON(name)			m_##name##_icon = create_ref<image>(icon_path / #name ".png", image_format::RGBA)
@@ -74,12 +50,16 @@ namespace AT {
 		LOAD_ICON(library);
 #undef	LOAD_ICON
 
-        initialize_python();
-
+        // m_open_projects.emplace_back();
+        // m_open_projects.back().name = "Example Project";
     }
     
     
     dashboard::~dashboard() {
+
+    #if defined(PLATFORM_LINUX)
+        util::shutdown_qt();
+    #endif
 
         if (Py_IsInitialized())
             finalize_python();
@@ -116,16 +96,20 @@ namespace AT {
         }
         
         std::filesystem::create_directories(util::get_executable_path() / "audio");
+        serialize(serializer::option::load_from_file);
         return true;
     }
 
     // shutdown will be called bevor any system is deinitalized
     bool dashboard::shutdown() {
 
+        serialize(serializer::option::save_to_file);
+
         // Acquire GIL if Python is initialized
-        PyGILState_STATE gstate = PyGILState_UNLOCKED;
+        // PyGILState_STATE gstate = PyGILState_UNLOCKED;
         if (Py_IsInitialized())
-            gstate = PyGILState_Ensure();
+            PyGILState_Ensure();
+            // gstate = PyGILState_Ensure();
 
         if (m_worker_running) {                                         // Signal worker to stop
 
@@ -173,28 +157,26 @@ namespace AT {
         ImGui::SetNextWindowViewport(viewport->ID);
         
         ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings;
-        ImGui::Begin("MainWindow", nullptr, flags);
-        {
-            sidebar();
-                        
-            // const ImVec2 content_size = ImGui::GetContentRegionAvail();
-            // Right panel (fills remaining space)
-            ImGui::BeginChild("RightPanel", ImVec2(0, 0), true);
-            {
-                
-                // Draw sections
-                for (size_t i = 0; i < m_sections.size(); i++) {
-                    draw_section(i);
-                }
-                
-                // Add section button
-                if (ImGui::Button("Add section")) {
-                    m_sections.push_back(section{});
-                    m_sections.back().input_fields.push_back(input_field{});
+        ImGui::Begin("main_window", nullptr, flags);
+        
+        draw_sidebar();
+        
+        ImGui::BeginChild("right_panel", ImVec2(0, 0), true);
+        if (ImGui::BeginTabBar("projects_tab_bar", ImGuiTabBarFlags_None)) {                        // Create tab bar for projects
+            for (auto& proj : m_open_projects) {
+                if (ImGui::BeginTabItem(proj.name.c_str(), nullptr, proj.saved ? ImGuiTabItemFlags_None : ImGuiTabItemFlags_UnsavedDocument)) {                       // Create a tab for each project
+
+                    draw_project(proj);
+                    ImGui::EndTabItem();
+
+                    if (m_current_project != proj.name)
+                        m_current_project = proj.name;
                 }
             }
-            ImGui::EndChild();
+            ImGui::EndTabBar();
         }
+        ImGui::EndChild();
+
         ImGui::End();
     }
 
@@ -243,13 +225,14 @@ namespace AT {
     }
 
 
-    void dashboard::sidebar() {
+    void dashboard::draw_sidebar() {
 
         // Get available content region
         const ImVec2 content_size = ImGui::GetContentRegionAvail();
         const float icon_size = 30.0f;
 
-    #define SECTION_HEADER(button, section_title)                UI::shift_cursor_pos(0.f, 5.f); ImGui::Image(button->get(), ImVec2(icon_size, icon_size), ImVec2(0, 0), ImVec2(1, 1));          \
+    #define SECTION_HEADER(button, section_title)                UI::shift_cursor_pos(0.f, 5.f);                                                \
+                ImGui::Image(button->get(), ImVec2(icon_size, icon_size), ImVec2(0, 0), ImVec2(1, 1));                                          \
                 ImGui::SameLine(); UI::shift_cursor_pos(10.f, 5.f); UI::big_text(section_title); UI::shift_cursor_pos(0.f, 20.f);
         
         switch (m_sidebar_status) {
@@ -296,7 +279,6 @@ namespace AT {
 
                 const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
-               
                 SECTION_HEADER(m_settings_icon, "Kokoro settings");
 
                 UI::begin_table("kokoro_settings", false);
@@ -306,21 +288,25 @@ namespace AT {
                         ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
                         if (ImGui::BeginCombo("##Voice Type", m_voice, ImGuiComboFlags_HeightLarge)) {
                         #define SELECTABLE(voice)       if (ImGui::Selectable(voice)) m_voice = voice;
-                            SELECTABLE("af_alloy")      SELECTABLE("af_aoede")      SELECTABLE("af_bella")      SELECTABLE("af_heart")
-                            SELECTABLE("af_jessica")    SELECTABLE("af_kore")       SELECTABLE("af_nicole")     SELECTABLE("af_nova")
-                            SELECTABLE("af_river")      SELECTABLE("af_sarah")      SELECTABLE("af_sky")        SELECTABLE("am_adam")
-                            SELECTABLE("am_echo")       SELECTABLE("am_eric")       SELECTABLE("am_fenrir")     SELECTABLE("am_liam")
-                            SELECTABLE("am_michael")    SELECTABLE("am_onyx")       SELECTABLE("am_puck")       SELECTABLE("am_santa")
-                            SELECTABLE("bf_alice")      SELECTABLE("bf_emma")       SELECTABLE("bf_isabella")   SELECTABLE("bf_lily")
-                            SELECTABLE("bm_daniel")     SELECTABLE("bm_fable")      SELECTABLE("bm_george")     SELECTABLE("bm_lewis")
-                            SELECTABLE("ef_dora")       SELECTABLE("em_alex")       SELECTABLE("em_santa")      SELECTABLE("ff_siwis")
-                            SELECTABLE("hf_alpha")      SELECTABLE("hf_beta")       SELECTABLE("hm_omega")      SELECTABLE("hm_psi")
-                            SELECTABLE("if_sara")       SELECTABLE("im_nicola")     SELECTABLE("jf_alpha")      SELECTABLE("jf_gongitsune")
-                            SELECTABLE("jf_nezumi")     SELECTABLE("jf_tebukuro")   SELECTABLE("jm_kumo")       SELECTABLE("pf_dora")
-                            SELECTABLE("pm_alex")       SELECTABLE("pm_santa")      SELECTABLE("zf_xiaobei")    SELECTABLE("zf_xiaoni")
-                            SELECTABLE("zf_xiaoxiao")   SELECTABLE("zf_xiaoyi")     SELECTABLE("zm_yunjian")    SELECTABLE("zm_yunxia")
-                            SELECTABLE("zm_yunxi")      SELECTABLE("zm_yunyang")
-                        #undef SELECTABLE()
+                            SELECTABLE("af_alloy")      SELECTABLE("af_aoede")      SELECTABLE("af_bella")
+                            SELECTABLE("af_heart")      SELECTABLE("af_jessica")    SELECTABLE("af_kore")
+                            SELECTABLE("af_nicole")     SELECTABLE("af_nova")       SELECTABLE("af_river")
+                            SELECTABLE("af_sarah")      SELECTABLE("af_sky")        SELECTABLE("am_adam")
+                            SELECTABLE("am_echo")       SELECTABLE("am_eric")       SELECTABLE("am_fenrir")
+                            SELECTABLE("am_liam")       SELECTABLE("am_michael")    SELECTABLE("am_onyx")
+                            SELECTABLE("am_puck")       SELECTABLE("am_santa")      SELECTABLE("bf_alice")
+                            SELECTABLE("bf_emma")       SELECTABLE("bf_isabella")   SELECTABLE("bf_lily")
+                            SELECTABLE("bm_daniel")     SELECTABLE("bm_fable")      SELECTABLE("bm_george")
+                            SELECTABLE("bm_lewis")      SELECTABLE("ef_dora")       SELECTABLE("em_alex")
+                            SELECTABLE("em_santa")      SELECTABLE("ff_siwis")      SELECTABLE("hf_alpha")
+                            SELECTABLE("hf_beta")       SELECTABLE("hm_omega")      SELECTABLE("hm_psi")
+                            SELECTABLE("if_sara")       SELECTABLE("im_nicola")     SELECTABLE("jf_alpha")
+                            SELECTABLE("jf_gongitsune") SELECTABLE("jf_nezumi")     SELECTABLE("jf_tebukuro")
+                            SELECTABLE("jm_kumo")       SELECTABLE("pf_dora")       SELECTABLE("pm_alex")
+                            SELECTABLE("pm_santa")      SELECTABLE("zf_xiaobei")    SELECTABLE("zf_xiaoni")
+                            SELECTABLE("zf_xiaoxiao")   SELECTABLE("zf_xiaoyi")     SELECTABLE("zm_yunjian")
+                            SELECTABLE("zm_yunxia")     SELECTABLE("zm_yunxi")      SELECTABLE("zm_yunyang")
+                        #undef SELECTABLE
                             ImGui::EndCombo();
                         }
                     }
@@ -335,25 +321,168 @@ namespace AT {
             
             case sidebar_status::project_manager: {
 
-                const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
+                const f32 sidebar_width = math::min(300.0f, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
-               
                 SECTION_HEADER(m_library_icon, "Project Management");
-
                 
-                // TODO: add project manager controls (create/save/load/delete/...)
-
-
+                // Project list section
+                UI::shift_cursor_pos(0.f, 10.f);
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "RECENT PROJECTS");
                 ImGui::Separator();
-                if (ImGui::Button("Back"))
-            	    m_sidebar_status = sidebar_status::menu;
+                ImGui::BeginChild("project_list", ImVec2(0, content_size.y - 380.f), true);               // Project list with scrollable area
+                {
+                    // Create a vector to store keys to remove (since we can't modify map while iterating)
+                    static std::vector<std::string> keys_to_remove;
+                    keys_to_remove.clear();
+
+                    // Iterate through the map
+                    size_t i = 0;
+                    for (const auto& [project_name, project_path] : m_project_paths) {
+                        ImGui::PushID(i++);
+
+                        const bool is_selected = (!m_open_projects.empty() && m_current_project == project_name);
+                        if (ImGui::Selectable(project_name.c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                            if (ImGui::IsMouseDoubleClicked(0)) {
+                                // Load project on double click
+                                // TODO: Implement project loading
+                            }
+                        }
+
+                        // Context menu for project options
+                        if (ImGui::BeginPopupContextItem()) {
+                            if (ImGui::MenuItem("Open")) {
+                                
+                                LOG(Trace, "open [" << project_name << "] from [" << project_path << "]")
+                                project loaded_project{};
+                                serialize_project(loaded_project, project_path, serializer::option::load_from_file);
+                                m_open_projects.push_back(loaded_project);
+
+                            }
+                            if (ImGui::MenuItem("Remove from list")) {
+                                keys_to_remove.push_back(project_name);
+                            }
+                            ImGui::EndPopup();
+                        }
+                        ImGui::PopID();
+                    }
+
+                    // Remove projects marked for removal
+                    for (const auto& key : keys_to_remove) {
+                        m_project_paths.erase(key);
+                    }
+
+                    if (m_project_paths.empty())
+                        ImGui::TextDisabled("No recent projects");
+                }
+                ImGui::EndChild();
                 
+                // Action buttons
+                UI::shift_cursor_pos(0.f, 20.f);
+                if (ImGui::Button("New Project", ImVec2(-1, 0))) {
+
+                    m_open_projects.emplace_back();
+
+                    // Find a unique project name
+                    std::string base_name = "New Project";
+                    std::string candidate_name = base_name;
+                    int counter = 0;
+                    
+                    auto name_exists = [&](const std::string& name) {                       // Check if name already exists in open-projects or project-paths
+                        for (const auto& proj : m_open_projects)
+                            if (proj.name == name) return true;
+
+                        for (const auto& proj_path : m_project_paths)
+                            if (proj_path.first == name) return true;
+                        return false;
+                    };
+                    
+                    while (name_exists(candidate_name))                                    // Find available name
+                        candidate_name = base_name + " " + (++counter < 10 ? "0" + std::to_string(counter) : std::to_string(counter));
+
+                    m_open_projects.back().name = candidate_name;
+                }
+                
+                if (ImGui::Button("Open Project...", ImVec2(-1, 0))) {
+                    
+                    // TODO: Implement file dialog for opening projects
+                    // const std::filesystem::path project_path = util::file_dialog("open TTS Project");
+
+                }
+                
+                if (!m_open_projects.empty() && ImGui::Button("Save Project", ImVec2(-1, 0))) {
+
+                    LOG(Trace, "Saving Project [" << m_current_project << "]")
+
+                    std::filesystem::path project_path{};
+                    if (m_project_paths.contains(m_current_project))
+                        project_path = m_project_paths.at(m_current_project);
+
+                    if (!project_path.empty()) {
+                        LOG(Trace, "project path found [" << project_path.generic_string() << "]")
+                        for (auto& proj : m_open_projects)                  // get currently open project-tap
+                            if (m_current_project == proj.name) {
+
+                                LOG(Trace, "Serializing project")
+                                serialize_project(proj, project_path, serializer::option::save_to_file);
+                                proj.saved = true;
+                            }
+
+                    } else {
+                        
+                        // TODO: should ask the user for a location (file dialog)
+                        std::filesystem::path proj_path = util::file_dialog("Select location for [" + m_current_project + "]", {}, true) / m_current_project / m_current_project;       // use [m_current_project] twice to make a directory and a file
+                        proj_path.replace_extension(".yml");
+                        LOG(Trace, "selected directory [" << proj_path << "]")
+                        for (auto& proj : m_open_projects)                  // get currently open project-tap
+                            if (m_current_project == proj.name) {
+
+                                serialize_project(proj, proj_path, serializer::option::save_to_file);
+                                proj.saved = true;
+                            }
+
+                        m_project_paths[m_current_project] = proj_path;
+                        serialize(serializer::option::save_to_file);
+                    }
+                }
+                
+                UI::shift_cursor_pos(0.f, 20.f);
+                ImGui::Separator();
+                UI::shift_cursor_pos(0.f, 10.f);
+                
+                // Current project info (if any project is open)
+                if (!m_open_projects.empty()) {
+                    for (auto& proj : m_open_projects)                  // get currently open project-tap
+                        if (m_current_project == proj.name) {
+                            
+                            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "CURRENT PROJECT");
+                            ImGui::TextWrapped("Name: %s", proj.name.c_str());
+                            if (!proj.description.empty())
+                                ImGui::TextWrapped("Description: %s", proj.description.c_str());
+                            
+                            // Project statistics
+                            const size_t total_sections = proj.sections.size();
+                            size_t total_fields = 0;
+                            for (const auto& section : proj.sections)
+                                total_fields += section.input_fields.size();
+                            
+                            ImGui::TextDisabled("Sections: %zu | Fields: %zu", total_sections, total_fields);
+                            ImGui::TextDisabled("Status: %s", proj.saved ? "Saved" : "Unsaved");
+                            const std::string path = m_project_paths.contains(m_current_project) ? m_project_paths.at(m_current_project) : "<not set>";
+                            ImGui::TextDisabled("Location: %s", path.c_str());
+                        }
+                }
+                
+                UI::shift_cursor_pos(0.f, 20.f);
+                ImGui::Separator();
+                if (ImGui::Button("Back", ImVec2(-1, 0)))
+                    m_sidebar_status = sidebar_status::menu;
+
             } break;
 
             default: break;
         }
 
-    #undef SECTION_HEADER()
+    #undef SECTION_HEADER
 
         ImGui::EndChild();
         UI::seperation_vertical();
@@ -361,13 +490,26 @@ namespace AT {
     }
 
 
-    void dashboard::draw_section(int section_index) {
-        auto& sec = m_sections[section_index];
+    void dashboard::draw_project(project& project_data) {
+
+            for( auto& sec : project_data.sections)
+                draw_section(project_data, sec);
+            
+            if (ImGui::Button("Add section")) {                                                     // Add section button
+                
+                project_data.sections.push_back(section{});
+                project_data.sections.back().input_fields.push_back(input_field{});
+                project_data.saved = false;
+            }
+    }
+
+    
+    void dashboard::draw_section(project& project_data, section& section_data) {
         
         // Section styling
-        ImGui::PushID(section_index);
+        ImGui::PushID(&section_data);
         ImVec4 bg_color = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
-        bg_color.w *= 1.05f;                                                                                             // Darker background
+        bg_color.w *= 1.05f;                                                                        // Darker background
         ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
         
         const float width = ImGui::GetContentRegionAvail().x;
@@ -375,11 +517,23 @@ namespace AT {
         const f32 button_size = 105.f;
 
         ImGui::Separator();
-        UI::big_text((sec.title).c_str());
+        // UI::big_text((section_data.title).c_str());
 
-        for (size_t i = 0; i < sec.input_fields.size(); i++) {                                                             // Input fields
 
-            auto& field = sec.input_fields[i];
+        constexpr size_t TITLE_SIZE = 512;
+        static char title_buffer[TITLE_SIZE];
+        strncpy(title_buffer, section_data.title.c_str(), TITLE_SIZE - 1);
+        title_buffer[TITLE_SIZE - 1] = '\0';
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, UI::get_default_gray_ref());
+        ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("header_0"));
+        if (ImGui::InputText("##input_field_title", title_buffer, TITLE_SIZE, ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput))
+            section_data.title = title_buffer;
+        ImGui::PopFont();
+        ImGui::PopStyleColor();
+
+        for (size_t i = 0; i < section_data.input_fields.size(); i++) {                                                             // Input fields
+
+            auto& field = section_data.input_fields[i];
             ImGui::PushID(&field); // Ensure unique ID if multiple fields exist
 
             const ImVec2 text_size = ImGui::CalcTextSize(field.content.c_str(), nullptr, false, width);                 // Calculate required height based on wrapped text
@@ -394,8 +548,11 @@ namespace AT {
             if (field_generating)
                 ImGui::BeginDisabled();
 
-            if (ImGui::InputTextMultiline("##InputField", buffer, BUFFER_SIZE, ImVec2(width - button_size, height), ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput))
+            if (ImGui::InputTextMultiline("##InputField", buffer, BUFFER_SIZE, ImVec2(width - button_size, height), ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput)) {
+
                 field.content = buffer;
+                project_data.saved = false;
+            }
 
                 
             ImGui::SameLine();
@@ -428,34 +585,43 @@ namespace AT {
             if (i > 0) {
 
                 ImGui::SameLine(0, 10);
-                if (ImGui::Button("^"))
-                    std::swap(sec.input_fields[i], sec.input_fields[i -1]);
+                if (ImGui::Button("^")) {
+
+                    std::swap(section_data.input_fields[i], section_data.input_fields[i -1]);
+                    project_data.saved = false;
+                }
             }
 
-            if (i < sec.input_fields.size() -1)  {
+            if (i < section_data.input_fields.size() -1)  {
 
                 ImGui::SameLine(0, (i) ? -1 : 29);                              // move "down" button for first row
-                if (ImGui::Button("v"))
-                    std::swap(sec.input_fields[i], sec.input_fields[i +1]);
+                if (ImGui::Button("v")) {
+
+                    std::swap(section_data.input_fields[i], section_data.input_fields[i +1]);
+                    project_data.saved = false;
+                }
             }
             
             ImGui::PopID();
         }
         
-        // Add field button
-        if (ImGui::Button("+ Add Field")) {
-            sec.input_fields.push_back(input_field{});
+        if (ImGui::Button("+ Add Field")) {                                     // Add field button
+            
+            section_data.input_fields.push_back(input_field{});
+            project_data.saved = false;
         }
         
-        // Generate all button for this section
+        
         ImGui::SameLine(0, 20);
-        if (ImGui::Button("Generate All")) {
+        if (ImGui::Button("Generate All")) {                                    // Generate all button for this section
 
-            for (size_t i = 0; i < sec.input_fields.size(); i++)       // set all fields to generate
-                sec.input_fields[i].generating = true;
-            
-            // TODO: Implement batch audio generation
+            std::lock_guard<std::mutex> lock(m_queue_mutex);
+            for (size_t i = 0; i < section_data.input_fields.size(); i++) {
 
+                m_generation_queue.push(section_data.input_fields[i].ID);       // Add to generation queue
+                section_data.input_fields[i].generating = true;                 // set all fields to generate
+            }
+            generation_worker();
         }
 
         ImGui::PopStyleColor();
@@ -488,15 +654,20 @@ namespace AT {
                 // Find Corresponding string
                 std::string text_to_generate;
                 bool found = false;
+                size_t project_index = 0;
                 size_t section_index = 0;
                 size_t field_index = 0;
-                for (section_index = 0; section_index < m_sections.size(); section_index++) {
-                    for (field_index = 0; field_index < m_sections[section_index].input_fields.size(); field_index++) {
-                        if (generation_task_ID == m_sections[section_index].input_fields[field_index].ID) {
-                            text_to_generate = m_sections[section_index].input_fields[field_index].content;
-                            found = true;
-                            break;
+                
+                for (project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                    for (section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                        for (field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                            if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
+                                text_to_generate = m_open_projects[project_index].sections[section_index].input_fields[field_index].content;
+                                found = true;
+                                break;
+                            }
                         }
+                        if (found) break;
                     }
                     if (found) break;
                 }
@@ -509,7 +680,7 @@ namespace AT {
                 bool success = call_python_generate_tts(text_to_generate, output_path.string());
                 VALIDATE(success, , "Successfully generated audio as [" << output_path.string() << "]", "Could not generate audio for [" << output_path.string() << "]")
                 
-                m_sections[section_index].input_fields[field_index].generating = false;                     // update status
+                m_open_projects[project_index].sections[section_index].input_fields[field_index].generating = false;                     // update status
             }
             
             LOG(Trace, "Worker finished")
@@ -645,13 +816,17 @@ namespace AT {
 
                             if (m_current_audio_field) {        // make sure we need to reset at all
                                 bool found = false;
-                                for (size_t section_index = 0; section_index < m_sections.size(); section_index++) {
-                                    for (size_t field_index = 0; field_index < m_sections[section_index].input_fields.size(); field_index++) {
-                                        if (m_current_audio_field == m_sections[section_index].input_fields[field_index].ID) {
-                                            m_sections[section_index].input_fields[field_index].playing_audio = false;
-                                            found = true;
-                                            break;
+
+                                for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                                    for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                                        for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                                            if (m_current_audio_field == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
+                                                m_open_projects[project_index].sections[section_index].input_fields[field_index].playing_audio = false;
+                                                found = true;
+                                                break;
+                                            }
                                         }
+                                        if (found) break;
                                     }
                                     if (found) break;
                                 }
@@ -677,19 +852,25 @@ namespace AT {
 
     void dashboard::stop_audio() {
         
-        if (m_current_audio_field) {        // make sure we need to reset at all
+        if (m_current_audio_field) {                // make sure we need to reset at all
         
             bool found = false;
-            for (size_t section_index = 0; section_index < m_sections.size(); section_index++) {
-                for (size_t field_index = 0; field_index < m_sections[section_index].input_fields.size(); field_index++) {
-                    if (m_current_audio_field == m_sections[section_index].input_fields[field_index].ID) {
-                        m_sections[section_index].input_fields[field_index].playing_audio = false;
-                        found = true;
-                        break;
+
+
+            for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                    for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                        if (m_current_audio_field == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
+                            m_open_projects[project_index].sections[section_index].input_fields[field_index].playing_audio = false;
+                            found = true;
+                            break;
+                        }
                     }
+                    if (found) break;
                 }
                 if (found) break;
             }
+            
             VALIDATE(found, , "Found and reset bool for [" << m_current_audio_field << "]", "Could not find bool for corresponding to ID [" << m_current_audio_field << "]")
             m_current_audio_field = 0;
         }
@@ -697,13 +878,42 @@ namespace AT {
     #ifdef PLATFORM_LINUX
         if (m_audio_pid > 0) {
             kill(m_audio_pid, SIGTERM);
-            waitpid(m_audio_pid, nullptr, 0); // Clean up zombie process
+            waitpid(m_audio_pid, nullptr, 0);       // Clean up zombie process
             m_audio_pid = 0;
             m_audio_playing = false;
         }
     #else
-        PlaySound(NULL, NULL, 0); // Stop Windows audio
+        PlaySound(NULL, NULL, 0);                   // Stop Windows audio
     #endif
+    }
+
+    // --------------------------------------------------------------------------------------------------------------
+    // UTIL
+    // --------------------------------------------------------------------------------------------------------------
+
+    void dashboard::serialize_project(project& project_data, const std::filesystem::path path, const serializer::option option) {
+
+        serializer::yaml(path, "project_data", option)
+            .entry(KEY_VALUE(project_data.name))
+            .entry(KEY_VALUE(project_data.description))
+            .vector(KEY_VALUE(project_data.sections), [&](serializer::yaml& yaml, u64 x) {
+
+				yaml.entry(KEY_VALUE(project_data.sections[x].title))
+                .vector(KEY_VALUE(project_data.sections[x].input_fields), [&](serializer::yaml& yaml, u64 y) {
+
+                    yaml.entry(KEY_VALUE(project_data.sections[x].input_fields[y].content))
+                    .entry(KEY_VALUE(project_data.sections[x].input_fields[y].ID));
+                });
+			});
+        
+        project_data.saved = true;          // set to saved, doesn't matter if loading/saving
+    }
+
+
+    void dashboard::serialize(const serializer::option option) {
+
+        serializer::yaml(util::get_executable_path() / "config" / "project_data.yml", "project_data", option)
+            .map(KEY_VALUE(m_project_paths));
     }
 
 }

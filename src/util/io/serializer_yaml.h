@@ -229,6 +229,50 @@ namespace AT::serializer {
 		}
 
 
+		// TODO: implement
+		template<typename T, typename K>
+		yaml& map(const std::string& map_name, std::unordered_map<T, K>& map) {
+
+			if (m_option == serializer::option::save_to_file) {											// Serialize the map
+				m_file_content << util::add_spaces(m_level_of_indention) << map_name << ":\n";
+				for (const auto& [key, value] : map)
+					m_file_content << util::add_spaces(m_level_of_indention + 1) << util::to_string<T>(key) << ": " << util::to_string<K>(value) << "\n";
+				
+			} else {																					// Deserialize the map
+				
+				// Deserialize map from YAML
+				std::unordered_map<std::string, std::string> temp_map;
+				std::string line;
+				
+				// Read until we find the map section
+				while (std::getline(m_file_content, line)) {
+					if (line.find(map_name + ":") != std::string::npos && 
+						util::measure_indentation(line) == m_level_of_indention) {
+						break;
+					}
+				}
+
+				while (std::getline(m_file_content, line)) {							// Read key-value pairs
+					if (util::measure_indentation(line) <= m_level_of_indention)		// End of map section
+						break;
+					
+					std::string key, value;
+					extract_key_value(key, value, line);
+					temp_map.emplace(std::move(key), std::move(value));
+				}
+
+				// Convert strings to actual types
+				for (const auto& [key_str, value_str] : temp_map) {
+					T key;
+					K value;
+					util::convert_from_string(key_str, key);
+					util::convert_from_string(value_str, value);
+					map.emplace(std::move(key), std::move(value));
+				}
+			}
+			return *this;
+		}
+
 	private:
 
 		void serialize();

@@ -37,9 +37,6 @@ Run the setup script to install dependencies and configure the environment:
 python3 setup.py
 ```
 
-During the first setup (which may take several minutes), you'll see this initialization screen while downloading the models and voices:
-
-<img src=".github/resources/initializing.png" alt="Initialization Screen" width="300">
 
 The script will:
 1. Create Python virtual environment
@@ -53,6 +50,10 @@ The script will:
 1. Open project in VSCode
 2. Build: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>B</kbd>
 3. Run: <kbd>F5</kbd> (will rebuild)
+
+During the first time running the application (which may take several minutes), you'll see this initialization screen while downloading the models and voices:
+
+<img src=".github/resources/initializing.png" alt="Initialization Screen" width="300">
 
 ### Manual Build
 ```bash
