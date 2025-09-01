@@ -44,7 +44,7 @@ namespace AT::UI {
 	GETTER_REF_FUNC_IMPL2(ImVec4, action_color_gray_hover, LERP_GRAY(0.27f));
 	GETTER_REF_FUNC_IMPL2(ImVec4, action_color_gray_active, LERP_GRAY(0.35f));
 
-	static ImVec4 vector_multi(const ImVec4& vec_0, const ImVec4& vec_1) {
+	[[maybe_unused]] static ImVec4 vector_multi(const ImVec4& vec_0, const ImVec4& vec_1) {
 		return ImVec4{ vec_0.x * vec_1.x, vec_0.y * vec_1.y, vec_0.z * vec_1.z, vec_0.w * vec_1.w };
 	}
 

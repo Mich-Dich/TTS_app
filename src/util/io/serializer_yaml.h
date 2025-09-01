@@ -228,10 +228,9 @@ namespace AT::serializer {
 			return *this;
 		}
 
-
-		// TODO: implement
+		//
 		template<typename T, typename K>
-		yaml& map(const std::string& map_name, std::unordered_map<T, K>& map) {
+		yaml& unordered_map(const std::string& map_name, std::unordered_map<T, K>& map) {
 
 			if (m_option == serializer::option::save_to_file) {											// Serialize the map
 				m_file_content << util::add_spaces(m_level_of_indention) << map_name << ":\n";
@@ -272,6 +271,14 @@ namespace AT::serializer {
 			}
 			return *this;
 		}
+
+		// TODO: implement
+		template<typename T>
+		yaml& unordered_set(const std::string& map_name, std::unordered_set<T>& map) {
+
+			return *this;
+		}
+
 
 	private:
 

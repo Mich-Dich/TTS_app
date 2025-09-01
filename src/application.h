@@ -63,6 +63,7 @@ namespace AT {
         static bool					        s_running;
 
         ref<dashboard>                      m_dashboard;
+        u64                                 m_crash_subscription = 0;
         bool						        m_focus = true;
         bool                                m_is_titlebar_hovered = false;
         u32							        m_target_fps = 60;

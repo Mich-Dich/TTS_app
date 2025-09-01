@@ -3,6 +3,7 @@
 
 #include <GLFW/glfw3.h>
 
+#include "util/crash_handler.h"
 #include "util/util.h"
 #include "platform/window.h"
 #include "events/event.h"
@@ -28,9 +29,6 @@ namespace AT {
     bool application::s_running;
 
     application::application(int argc, char* argv[]) {
-
-        logger::init("[$B$T:$J$E] [$B$L$X $I - $P:$G$E] $C$Z", true, util::get_executable_path() / "logs", "application.log", true);
-        logger::set_buffer_threshold(logger::severity::Warn);
         
         ASSERT(!s_instance, "", "Application already exists");
         LOG_INIT
@@ -54,10 +52,13 @@ namespace AT {
         // ----------- user defined system -----------
         m_imgui_config = create_ref<UI::imgui_config>();
         m_dashboard = create_ref<dashboard>();
+        AT::crash_handler::subscribe([this]() { m_dashboard->on_crash(); });
     }
 
     application::~application() {
 
+        m_dashboard.reset();
+        AT::crash_handler::unsubscribe(m_crash_subscription);
 		m_imgui_config.reset();
         
         m_renderer->resource_free();         // need to call free manually because some destructors need the applications access to the renderer (eg: image)
