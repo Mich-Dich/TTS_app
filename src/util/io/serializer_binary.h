@@ -9,11 +9,40 @@ namespace AT::serializer {
 
 		DELETE_COPY_MOVE_CONSTRUCTOR(binary);
 
+		// Declares a default getter for the serialization option member.
+		// The macro will expand to a function that returns the current option.
+		// @return The current serialization option.
 		DEFAULT_GETTER(option, option);
 
+
+		// Constructs a binary serializer/deserializer for the given file and section.
+		// When [option] is save_to_file the object opens the file for binary output;
+		// otherwise it opens the file for binary input.
+		// @param filename The path to the file to read from or write to.
+		// @param section_name A human-readable name for the section being (de)serialized.
+		// @param option Controls whether the instance is used to save to or load from file.
+		// @return Constructs a binary object ready to perform (de)serialization.
 		binary(const std::filesystem::path filename, const std::string& section_name, option option);
+
+
+		// Destroys the binary (de)serializer and closes any open file streams.
+		// If the object opened an output stream it will be closed; likewise for input streams.
+		// @return None.
 		~binary();
 
+
+		// Serializes or deserializes a single value depending on the configured option.
+		// If saving:
+		//   - For std::filesystem::path: converts to a string and serializes that string.
+		//   - For std::string: writes a length (size_t) followed by the raw characters.
+		//   - For other types: writes raw bytes of sizeof(T).
+		// If loading:
+		//   - For std::filesystem::path: reads a string and constructs the path from it.
+		//   - For std::string: reads a length then fills the string buffer from the stream.
+		//   - For other types: reads raw bytes into the provided value.
+		// @tparam T The type of the value to (de)serialize.
+		// @param value Reference to the value to serialize (when saving) or to receive the value (when loading).
+		// @return A reference to *this to allow chaining of entry(...) calls.
 		template<typename T>
 		binary& entry(T& value) {
 
@@ -59,6 +88,13 @@ namespace AT::serializer {
 		}
 
 
+		// Serializes or deserializes a contiguous std::vector<T>.
+		// If saving: writes the vector's size (size_t) followed by the raw element bytes (sizeof(T) * size).
+		// If loading: reads the size, resizes the vector, then reads raw element bytes into vector.data().
+		// NOTE: This assumes T is trivially copyable / safely writable as raw bytes.
+		// @tparam T The vector element type.
+		// @param vector The vector to write (when saving) or to fill (when loading).
+		// @return A reference to *this to allow chaining.
 		template<typename T>
 		binary& entry(std::vector<T>& vector) {
 
@@ -80,7 +116,15 @@ namespace AT::serializer {
 		}
 
 
-		// When used with option [load_from_file] will create a new array with "new" -> called has ownership
+		// Serializes or deserializes a raw array region of known size.
+		// If saving: writes the array data (sizeof(T) * array_size) from array_start to the output stream.
+		// If loading: allocates a buffer with malloc(sizeof(T) * array_size), reads bytes into it,
+		//             and assigns the pointer to array_start. Caller becomes the owner and is responsible for freeing it.
+		// WARNING: On load ownership transfers to the caller; memory is allocated with malloc.
+		// @tparam T The element type of the array.
+		// @param array_start Pointer reference that points to the array data (or will be assigned the allocated buffer when loading).
+		// @param array_size Number of elements in the array.
+		// @return A reference to *this to allow chaining.
 		template<typename T>
 		binary& array(T*& array_start, size_t array_size) {
 
@@ -98,6 +142,15 @@ namespace AT::serializer {
 		}
 
 
+		// Placeholder for serializing/deserializing a vector with a custom per-element callback.
+		// Currently unimplemented — logs an error and returns immediately.
+		// Intended behavior (when implemented): iterate elements and call vector_function for each element,
+		// allowing custom (de)serialization logic for complex element types.
+		// @tparam T The vector element type.
+		// @param vector The vector to operate on.
+		// @param vector_function A callback that performs (de)serialization per element.
+		//                        Signature: void(AT::serializer::binary&, const u64 iteration)
+		// @return A reference to *this (currently the function returns immediately after logging).
 		template<typename T>
 		binary& vector(std::vector<T>& vector, std::function<void(AT::serializer::binary&, const u64 iteration)> vector_function) {
 

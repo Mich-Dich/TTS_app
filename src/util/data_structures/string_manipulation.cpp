@@ -32,7 +32,7 @@ namespace AT::util {
     }
 
 
-    std::string extract_vaiable_name(const std::string& input) {
+    std::string extract_variable_name(const std::string& input) {
 
         std::string result = input;
         extract_part_after_delimiter(result, input, "->");

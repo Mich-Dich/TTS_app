@@ -8,47 +8,22 @@
 // @brief Primitive type definitions for consistent sizing across platforms
 // =============================================
 
-typedef uint8_t  u8;    							// 8-bit unsigned integer
-typedef uint16_t u16;   							// 16-bit unsigned integer
-typedef uint32_t u32;   							// 32-bit unsigned integer
-typedef uint64_t u64;   							// 64-bit unsigned integer
+typedef uint8_t  	u8;    							// 8-bit unsigned integer
+typedef uint16_t 	u16;   							// 16-bit unsigned integer
+typedef uint32_t 	u32;   							// 32-bit unsigned integer
+typedef uint64_t 	u64;   							// 64-bit unsigned integer
 
-typedef int8_t  int8;   							// 8-bit signed integer
-typedef int16_t int16;  							// 16-bit signed integer
-typedef int32_t int32;  							// 32-bit signed integer
-typedef int64_t int64;  							// 64-bit signed integer
+typedef int8_t  	int8;   						// 8-bit signed integer
+typedef int16_t 	int16;  						// 16-bit signed integer
+typedef int32_t 	int32;  						// 32-bit signed integer
+typedef int64_t 	int64;  						// 64-bit signed integer
 
-typedef float f32;          						// 32-bit floating point
-typedef double f64;         						// 64-bit floating point
+typedef float 		f32;          					// 32-bit floating point
+typedef double 		f64;         					// 64-bit floating point
 typedef long double f128;   						// 128-bit floating point (platform dependent)
 
 // Platform-specific types				
 typedef unsigned long long handle;  				// Generic handle type for OS resources
-
-
-// Extension for asset files
-#define AT_ASSET_EXTENTION			".gltasset"
-
-// Extension for project files
-#define PROJECT_EXTENTION    		".gltproj"
-
-// Configuration file extensions
-#define FILE_EXTENSION_CONFIG   	".yml"        	// Extension for YAML config files
-#define FILE_EXTENSION_INI      	".ini"          // Extension for INI config files
-
-// Temporary directory for DLL builds
-#define PROJECT_TEMP_DLL_PATH 		"build_DLL"
-
-// Directory structure macros
-#define METADATA_DIR            	"metadata"      // Directory for metadata files
-#define CONFIG_DIR              	"config"        // Directory for configuration files
-#define CONTENT_DIR             	"content"       // Directory for content files
-#define SOURCE_DIR              	"src"           // Directory for source code
-
-#define PROJECT_PATH				application::get().get_project_path()
-#define PROJECT_NAME				application::get().get_project_data().name
-
-#define CONTENT_PATH				util::get_executable_path() / "assets"
 
 
 namespace AT {
@@ -142,19 +117,13 @@ namespace AT {
 		}
 	
 		// “newer than”
-		bool operator>(const system_time& other) const {
-			return other < *this;
-		}
+		bool operator>(const system_time& other) 	const { return other < *this; }
 	
 		// “not newer than” (i.e. older or equal)
-		bool operator<=(const system_time& other) const {
-			return !(*this > other);
-		}
+		bool operator<=(const system_time& other) 	const { return !(*this > other); }
 	
 		// “not older than” (i.e. newer or equal)
-		bool operator>=(const system_time& other) const {
-			return !(*this < other);
-		}
+		bool operator>=(const system_time& other) 	const { return !(*this < other); }
 	
 		// equality
 		bool operator==(const system_time& other) const {
@@ -163,12 +132,37 @@ namespace AT {
 		}
 
 		// inequality
-		bool operator!=(const system_time& other) const {
-			return !(*this == other);
-		}
+		bool operator!=(const system_time& other) 	const { return !(*this == other); }
 	
 		// @brief Converts system_time to human-readable string
 		std::string to_str() const { return std::format("{}-{:02}-{:02} ({}) {:02}:{:02}:{:02}.{:03}", year, month, day, day_of_week, hour, minute, secund, millisecend); }
+		
+		// @brief Check if this time is older than another time by at least the specified duration
+		// @param other The time to compare against
+		// @param seconds The minimum number of seconds that must have passed
+		// @return true if this time is older than the other time by at least the specified seconds
+		bool is_older_than(const system_time& other, u32 seconds) const {
+			// First check if this time is actually older using existing operator
+			if (*this >= other) return false;
+
+			// Calculate difference in seconds
+			int64 diff_seconds = 0;
+			diff_seconds += (other.year - year) * 365 * 24 * 60 * 60;
+			diff_seconds += (other.month - month) * 30 * 24 * 60 * 60;
+			diff_seconds += (other.day - day) * 24 * 60 * 60;
+			diff_seconds += (other.hour - hour) * 60 * 60;
+			diff_seconds += (other.minute - minute) * 60;
+			diff_seconds += (other.secund - secund);
+			f64 total_diff = static_cast<f64>(diff_seconds) + (static_cast<f64>(other.millisecend) - static_cast<f64>(millisecend)) / 1000.0;
+
+			return total_diff >= seconds;
+		}
+
+		// @brief Check if this time is older than another time by at least the specified duration
+		// This version allows specifying minutes instead of seconds
+		bool is_older_than_minutes(const system_time& other, u32 minutes) const {
+			return is_older_than(other, minutes * 60);
+		}
 	};
 	
 	// =============================================

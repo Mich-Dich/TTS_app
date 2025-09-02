@@ -52,7 +52,7 @@ namespace AT {
         // ----------- user defined system -----------
         m_imgui_config = create_ref<UI::imgui_config>();
         m_dashboard = create_ref<dashboard>();
-        AT::crash_handler::subscribe([this]() { m_dashboard->on_crash(); });
+        m_crash_subscription = AT::crash_handler::subscribe([this]() { m_dashboard->on_crash(); });
     }
 
     application::~application() {

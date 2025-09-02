@@ -41,7 +41,7 @@ namespace AT {
 
         initialize_python();
 
-		const std::filesystem::path icon_path = CONTENT_PATH / "images";
+		const std::filesystem::path icon_path = util::get_executable_path() / ASSET_DIR / "images";
 #define LOAD_ICON(name)			m_##name##_icon = create_ref<image>(icon_path / #name ".png", image_format::RGBA)
 		LOAD_ICON(generate);
 		LOAD_ICON(audio);
@@ -95,6 +95,7 @@ namespace AT {
         
         std::filesystem::create_directories(util::get_executable_path() / "audio");
         serialize(serializer::option::load_from_file);
+        m_last_save_time = util::get_system_time();
         return true;
     }
 
@@ -154,6 +155,7 @@ namespace AT {
         // Save projects that have a path registered
         for (auto& proj : m_open_projects) {
 
+            LOG(Trace, "project: " << proj.name)
             std::filesystem::path project_path{};
             if (!m_project_paths.contains(proj.name))
                 continue;
@@ -162,11 +164,35 @@ namespace AT {
             LOG(Trace, "saving project [" << proj.name << "] to [" << project_path.generic_string() << "]")
             serialize_project(proj, project_path, serializer::option::save_to_file);
         }
-
+        LOG(Trace, "Done saving")
     }
 
 
-    void dashboard::update(f32 delta_time)  { }
+    void dashboard::update(f32 delta_time)  {
+
+        if (m_last_save_time.is_older_than(util::get_system_time(), m_save_interval_sec)) {
+
+            LOG(Trace, "Auto saving")
+            serialize(serializer::option::save_to_file);
+
+            u32 save_counter = 0;
+            for (auto& proj : m_open_projects) {
+
+                std::filesystem::path project_path{};
+                if (proj.saved || !m_project_paths.contains(proj.name))        // Save projects that need it and have a path registered
+                    continue;
+
+                project_path = m_project_paths.at(proj.name);
+                LOG(Trace, "saving project [" << proj.name << "] to [" << project_path.generic_string() << "]")
+                serialize_project(proj, project_path, serializer::option::save_to_file);
+                save_counter++;
+            }
+
+            LOG(Trace, "saved [" << save_counter << "] projects")
+
+            m_last_save_time = util::get_system_time();
+        }
+    }
 
 
     void dashboard::on_event(event& event)  { }
@@ -306,9 +332,9 @@ namespace AT {
 
                 const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
-                SECTION_HEADER(m_settings_icon, "Kokoro settings");
+                SECTION_HEADER(m_settings_icon, "Settings");
 
-                UI::begin_table("kokoro_settings", false);
+                UI::begin_table("Kokoro Settings");
                 UI::table_row_slider("Voice Speed", m_voice_speed, .5f, 2.f, .05f);
                 UI::table_row([]() { ImGui::Text("Voice Type"); },
                     [&]() {
@@ -338,6 +364,15 @@ namespace AT {
                         }
                     }
                 );
+                UI::end_table();
+
+                UI::shift_cursor_pos(0, 20);
+
+                UI::begin_table("Save Settings");
+                UI::table_row("Auto Save", m_auto_save);
+                if (!m_auto_save) ImGui::BeginDisabled();
+                UI::table_row_slider<u32>("Intervals", m_save_interval_sec, 0, 1000, 1);
+                if (!m_auto_save) ImGui::EndDisabled();
                 UI::end_table();
 
                 ImGui::Separator();
@@ -539,7 +574,7 @@ namespace AT {
     #undef SECTION_HEADER
 
         ImGui::EndChild();
-        UI::seperation_vertical();
+        UI::separator_vertical();
         ImGui::SameLine();
     }
 
@@ -609,20 +644,19 @@ namespace AT {
 
 
                 // Right-click context menu for deletion
-                if (ImGui::BeginPopupContextItem()) {
+                // In the draw_section function, modify the context menu section:
+                if (ImGui::BeginPopupContextItem("field_context")) {
                     if (ImGui::MenuItem("Delete")) {
-                        
-                        if (field.playing_audio)                            // Stop audio if playing
+                        if (field.playing_audio)
                             stop_audio();
                         
-                        section_data.input_fields.erase(section_data.input_fields.begin() + i);         // Remove the field
+                        section_data.input_fields.erase(section_data.input_fields.begin() + i);
                         project_data.saved = false;
                         ImGui::EndPopup();
                         ImGui::PopID();
                         if (field_generating) 
                             ImGui::EndDisabled();
-
-                        continue;                                           // Skip rest of iteration since field was deleted
+                        continue;
                     }
                     ImGui::EndPopup();
                 }
@@ -1002,6 +1036,8 @@ namespace AT {
 
         serializer::yaml(util::get_executable_path() / "config" / "project_data.yml", "project_data", option)
             .entry(KEY_VALUE(m_current_project))
+            .entry(KEY_VALUE(m_auto_save))
+            .entry(KEY_VALUE(m_save_interval_sec))
             .unordered_map(KEY_VALUE(m_project_paths));
     }
 

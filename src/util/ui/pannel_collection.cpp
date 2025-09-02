@@ -16,7 +16,7 @@
 
 namespace AT::UI {
 
-	bool is_holvering_window() {
+	bool is_hovering_window() {
 
 		const ImVec2 mouse_pos = ImGui::GetMousePos();
 		const ImVec2 popup_pos = ImGui::GetWindowPos();
@@ -450,7 +450,7 @@ namespace AT::UI {
 	}
 
 
-	void seperation_vertical() {
+	void separator_vertical() {
 
 		ImGui::SameLine();
 		shift_cursor_pos(5, 0);
@@ -702,7 +702,7 @@ namespace AT::UI {
 		ImGui::SameLine(0, 0);
 	}
 
-	void anci_text(std::string_view text) {
+	void ansi_text(std::string_view text) {
 
 		size_t current_position = 0;
 		ImVec4 color = ImVec4(1.f);

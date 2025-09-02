@@ -105,6 +105,10 @@ namespace AT {
         PyThreadState*                                                  m_python_thread_state = nullptr;
         PyObject*                                                       m_py_module = nullptr;
         PyObject*                                                       m_py_generate_tts_function = nullptr;
+
+        bool                                                            m_auto_save = true;
+        system_time                                                     m_last_save_time;
+        u32                                                             m_save_interval_sec = 300;
         const char*                                                     m_voice = "am_onyx";
         f32                                                             m_voice_speed = 1.2;
         std::string                                                     m_generation_status{};                          // Status messages

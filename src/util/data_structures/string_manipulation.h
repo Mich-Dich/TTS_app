@@ -1,6 +1,7 @@
 #pragma once
 
-#include <imgui.h>
+struct ImVec2;
+struct ImVec4;
 
 #include "util/data_structures/UUID.h"
 
@@ -30,7 +31,7 @@ namespace AT::util {
     //          The extraction process considers both "->" and "." as delimiters for nested access.
     // @param [input] The input string representing the variable access chain.
     // @return A string containing the name of the variable extracted from the input string.
-    std::string extract_vaiable_name(const std::string& input);
+    std::string extract_variable_name(const std::string& input);
 
     //@brief Converts a string to a boolean value.
     //@param [string] The string to convert.
@@ -39,7 +40,7 @@ namespace AT::util {
 
     //@brief Converts a boolean value to a string.
     //@param [boolean] The boolean value to convert.
-    //@return [conat char*] "true" if the boolean value is true, "false" otherwise.
+    //@return [const char*] "true" if the boolean value is true, "false" otherwise.
     FORCEINLINE constexpr const char* bool_to_str(bool boolean) { return boolean ? "true" : "false"; }
 
     std::string add_spaces(const u32 multiple_of_indenting_spaces, u32 num_of_indenting_spaces = 2);
@@ -124,10 +125,10 @@ namespace AT::util {
 
         const char* typeName = typeid(T).name();
         int status;
-        char* demangled = abi::__cxa_demangle(typeName, nullptr, nullptr, &status);
+        char* de_mangled = abi::__cxa_demangle(typeName, nullptr, nullptr, &status);
         if (status == 0) {
-            typename_string = demangled;
-            free(demangled);
+            typename_string = de_mangled;
+            free(de_mangled);
         } else
             typename_string = typeName;
         
@@ -224,7 +225,7 @@ namespace AT::util {
             dest_string = oss.str();
             return;
         }
-        // Matrix of size 4         TODO: move into seperate template for all matrixes
+        // Matrix of size 4         TODO: move into separate template for all matrixes
         else if constexpr (std::is_same_v<T, glm::mat4>) {
 
             std::ostringstream oss;

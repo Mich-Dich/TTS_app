@@ -28,35 +28,44 @@ namespace AT::logger {
         Fatal
     };
 
-    // Initalize the logging system
-    // @param format The iital log message foemat
+
+    // Initialize the logging system
+    // @param format The inital log message foeman
     // @param log_to_console should the log message be written to std::cout?
     // @param log_dir the directory that will contain all log files
     // @ main_log_file_name name of the central log_file (the thread that runs logger::init())
     // @param use_append_mode Should the system write over the existing log file or append to it
     bool init(const std::string& format, const bool log_to_console = false, const std::filesystem::path log_dir = "./logs", const std::string& main_log_file_name = "general.log", const bool use_append_mode = false);
 
-    // shutdown the logging system
+
+    // Shuts down the logging subsystem: stops the worker thread, drains and processes
+    // any remaining queued log messages, flushes buffered messages to the main log file,
+    // and marks the logger as uninitialized.
+    // If the logger was not initialized, an error is printed and the program exits immediately.
+    // @return None.
     void shutdown();
 
+    // Returns the filesystem path to the main log file used by the logger.
+    // @return A std::filesystem::path pointing to the current main log file.
     std::filesystem::path get_log_file_location();
 
-    // The format of log-messages can be custimized with the following tags
+
+    // The format of log-messages can be customized with the following tags
     // @note to format all following log-messages use: set_format()
     // @note e.g. set_format("$B[$T] $L [$F] $C$E")
     //
     // @param $T time                    hh:mm:ss
     // @param $H hour                    hh
     // @param $M minute                  mm
-    // @param $S secunde                 ss
-    // @param $J millisecunde            jjj
+    // @param $S secund                  ss
+    // @param $J milliseconds            jjj
     //      
     // @param $N data                    yyyy:mm:dd
     // @param $Y data year               yyyy
     // @param $O data month              mm
     // @param $D data day                dd
     //
-    // @param $M thread                  Thread_id: 137575225550656 or a lable if provided
+    // @param $M thread                  Thread_id: 137575225550656 or a label if provided
     // @param $F function name           application::main, math::foo
     // @param $P only function name      main, foo
     // @param $A file name               /home/workspace/test_cpp/src/main.cpp  /home/workspace/test_cpp/src/project.cpp
@@ -71,58 +80,86 @@ namespace AT::logger {
     // @param $Z new line                add a new line in the message format
     void set_format(const std::string& new_format);
 
+
     // Restore the previous log-message format
     // @note This function swaps the current log-message format with the previously stored backup.
-    // It's useful for revertinng to the previous format after temporary changes
+    // It's useful for reverting to the previous format after temporary changes
     void use_previous_format();
 
-    // get the currently used log-message format
+
+    // Returns the current log output format string.
+    // @return A copy of the format string used for log messages.
     const std::string get_format();
 
-    // all messages with a lower severity than the provided argumant will be buffered
+
+    // all messages with a lower severity than the provided argument will be buffered
     // Trace => buffer[]
     // Debug => buffer[Trace]
     // Info  => buffer[Trace + Debug]
     // Warn  => buffer[Trace + Debug + Info]
     // Error => buffer[Trace + Debug + Info + Warn]     (Error and Fatal will nover be buffered)
     // Fatal => buffer[Trace + Debug + Info + Warn]     (Error and Fatal will nover be buffered)
-    void set_buffer_threshold(const severity new_threshhold);
+    void set_buffer_threshold(const severity new_threshold);
+
 
     // set the size of the buffer.
     // @note for messages that are not directly logged
     void set_buffer_size(const size_t new_size);
+
 
     // Registers a label for a specific thread, allowing for easier identification in logs.
     // If a label is already registered for the given thread ID, it will be overridden with the new label.
     // @param thread_label The label to be associated with the thread.
     // @param thread_id The ID of the thread for which the label is being registered. 
     //                  Defaults to the ID of the calling thread if not provided.
-    void register_label_for_thread(const std::string& thread_lable, std::thread::id thread_id = std::this_thread::get_id());
+    void register_label_for_thread(const std::string& thread_label, std::thread::id thread_id = std::this_thread::get_id());
     
+
     // Unregisters the label for a specific thread, removing its association from the logger.
     // If no label is registered for the given thread ID, a message will be logged indicating that the operation was ignored.
     // @param thread_id The ID of the thread for which the label is being unregistered. 
     //                  Defaults to the ID of the calling thread if not provided.
     void unregister_label_for_thread(std::thread::id thread_id = std::this_thread::get_id());
     
+
     // THIS SHOULD NEVER BE DIRECTLY CALLED
     // @note empty log messages will be ignored
     void log_msg(const severity msg_sev, const char* file_name, const char* function_name, const int line, std::thread::id thread_id, std::string&& message);
 
 
-	class logged_exception : public std::exception {
+    // An exception type that logs the error message immediately when constructed.
+    // The exception stores the provided message and also forwards it to the logger
+    // with context (file, function, line, thread).
+    // @note This class inherits from std::exception so it can be thrown/caught like a standard exception.
+    class logged_exception : public std::exception {
 		public: 
+
+            // Constructs a logged_exception from source location, thread id and an rvalue message.
+            // The constructor logs the message via logger::log_msg and stores the message for later retrieval.
+            // @param file The source file where the exception was created (typically __FILE__).
+            // @param function The function name where the exception was created (typically __FUNCTION__ / __func__).
+            // @param line The source line number where the exception was created (typically __LINE__).
+            // @param thread_id The id of the thread that raised the exception.
+            // @param message The error message to log and store (moved into the exception).
+            // @return None. (Constructs and logs the error.)
 			explicit logged_exception(const char* file, const char* function , const int line, std::thread::id thread_id,  std::string&& message)
 				: m_msg(message) { logger::log_msg(logger::severity::Error, file, function, line, thread_id, std::move(message)); }
 		
-			virtual const char* what() const noexcept override { return m_msg.c_str(); }
+
+            // Returns a C-string describing the exception. Marked noexcept to match std::exception::what().
+            // @return A pointer to a null-terminated C-string containing the stored error message.
+            virtual const char* what() const noexcept override { return m_msg.c_str(); }
 		
 		private:
+
+            // The stored error message for this exception instance.
+            // @note This string is the source for the pointer returned by what().
 			std::string m_msg;
 	};
 }
 
-// This enables the diffrent log levels (FATAL + ERROR are alwasy on)
+
+// This enables the different log levels (FATAL + ERROR are always on)
 //  0 = FATAL + ERROR
 //  1 = FATAL + ERROR + WARN
 //  2 = FATAL + ERROR + WARN + INFO
@@ -172,43 +209,43 @@ namespace AT::logger {
 #if defined (PLATFORM_WINDOWS)
 
     #if ENABLE_LOGGING_FOR_ASSERTS
-        #define ASSERT(expr, message_success, message_failure)                              \
-            if (expr)                                                                       \
-                LOG(Trace, message_success)                                                 \
-            else {                                                                          \
-                LOG(Fatal, message_failure)                                                 \
-                DEBUG_BREAK();                                                              \
+        #define ASSERT(expr, message_success, message_failure)                          \
+            if (expr)                                                                   \
+                LOG(Trace, message_success)                                             \
+            else {                                                                      \
+                LOG(Fatal, message_failure)                                             \
+                DEBUG_BREAK();                                                          \
             }
 
-        #define ASSERT_S(expr)                                                              \
-            if (!(expr)) {                                                                  \
-                LOG(Fatal, #expr)                                                           \
-                DEBUG_BREAK();                                                              \
+        #define ASSERT_S(expr)                                                          \
+            if (!(expr)) {                                                              \
+                LOG(Fatal, #expr)                                                       \
+                DEBUG_BREAK();                                                          \
             }
     #else
-        #define ASSERT(expr, message_success, message_failure)                              if (!(expr)) { DEBUG_BREAK() }
-        #define ASSERT_S(expr)                                                              if (!(expr)) { DEBUG_BREAK() }
+        #define ASSERT(expr, message_success, message_failure)                          if (!(expr)) { DEBUG_BREAK() }
+        #define ASSERT_S(expr)                                                          if (!(expr)) { DEBUG_BREAK() }
     #endif
 
 #elif defined (PLATFORM_LINUX)
 
     #if ENABLE_LOGGING_FOR_ASSERTS
-        #define ASSERT(expr, message_success, message_failure)                              \
-            if (expr)                                                                       \
-                LOG(Trace, message_success)                                                 \
-            else {                                                                          \
-                LOG(Fatal, message_failure)                                                 \
-                LOGGED_EXCEPTION(message_failure);                                          \
+        #define ASSERT(expr, message_success, message_failure)                          \
+            if (expr)                                                                   \
+                LOG(Trace, message_success)                                             \
+            else {                                                                      \
+                LOG(Fatal, message_failure)                                             \
+                LOGGED_EXCEPTION(message_failure);                                      \
             }
 
-        #define ASSERT_S(expr)                                                              \
-            if (!(expr)) {                                                                  \
-                LOG(Fatal, #expr)                                                           \
-                LOGGED_EXCEPTION(#expr);                                                    \
+        #define ASSERT_S(expr)                                                          \
+            if (!(expr)) {                                                              \
+                LOG(Fatal, #expr)                                                       \
+                LOGGED_EXCEPTION(#expr);                                                \
             }
     #else
-        #define ASSERT(expr, message_success, message_failure)                              if (!(expr)) { LOGGED_EXCEPTION(#expr); }
-        #define ASSERT_S(expr)                                                              if (!(expr)) { LOGGED_EXCEPTION(#expr); }
+        #define ASSERT(expr, message_success, message_failure)                          if (!(expr)) { LOGGED_EXCEPTION(#expr); }
+        #define ASSERT_S(expr)                                                          if (!(expr)) { LOGGED_EXCEPTION(#expr); }
     #endif
 
     #endif

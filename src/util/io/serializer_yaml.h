@@ -24,6 +24,7 @@ namespace AT::serializer {
 		// @return A reference to the YAML object for chaining function calls.
 		yaml& sub_section(const std::string& section_name, std::function<void(serializer::yaml&)> sub_section_function);
 
+		
 		// @brief This function is responsible for serializing or deserializing a single variable 
 		//          to or from the YAML file based on the specified serialization option. If the 
 		//          option is set to [save_to_file], it converts the variable to its string 
@@ -109,6 +110,7 @@ namespace AT::serializer {
 			m_prefix = m_prefix_fallback;
 			return *this;
 		}
+
 
 		// @brief This function is responsible for serializing or deserializing a vector variable to or from
 		//          the YAML file based on the specified serialization option. If the option is set to save to file,
@@ -228,7 +230,21 @@ namespace AT::serializer {
 			return *this;
 		}
 
-		//
+
+		// Serializes or deserializes an unordered_map to/from YAML stored in the class's file stream.
+		// When saving, writes a YAML mapping named [map_name] and writes each key/value pair as "key: value"
+		// using util::to_string<T>/util::to_string<K>. When loading, finds the section named [map_name]
+		// at the current indentation level, reads key/value lines until the section ends, converts each
+		// string key and value back into types T and K via util::convert_from_string, and inserts them
+		// into [map].
+		// @tparam T The unordered_map key type. Must be convertible to/from std::string by util::to_string<T>
+		//            and util::convert_from_string.
+		// @tparam K The unordered_map mapped value type. Must be convertible to/from std::string by
+		//            util::to_string<K> and util::convert_from_string.
+		// @param map_name The YAML key/name under which the map is serialized/deserialized.
+		// @param map The unordered_map to write to the YAML stream (when saving) or to populate
+		//            with parsed values (when loading).
+		// @return A reference to this yaml serializer/deserializer to allow chaining.
 		template<typename T, typename K>
 		yaml& unordered_map(const std::string& map_name, std::unordered_map<T, K>& map) {
 
@@ -272,14 +288,59 @@ namespace AT::serializer {
 			return *this;
 		}
 
-		// TODO: implement
+		
+		// Serializes or deserializes an unordered_set to/from YAML stored in the class's file stream.
+		// When saving, writes a YAML sequence named [set_name] and writes each element as "- element".
+		// When loading, finds the sequence named [set_name] at the current indentation level, reads each
+		// sequence entry (lines beginning with "- "), converts the string representation to type T using
+		// util::convert_from_string, and inserts the values into [set].
+		// @tparam T The element type stored in the unordered_set. Must be convertible to/from std::string
+		//            via util::convert_from_string and util::convert_to_string<T>.
+		// @param set_name The YAML key/name under which the set sequence is serialized/deserialized.
+		// @param set The unordered_set to write to the YAML stream (when saving) or to populate with parsed
+		//            elements (when loading).
+		// @return A reference to this yaml serializer/deserializer to allow chaining.
 		template<typename T>
-		yaml& unordered_set(const std::string& map_name, std::unordered_set<T>& map) {
+		yaml& unordered_set(const std::string& set_name, std::unordered_set<T>& set) {
 
+			if (m_option == option::save_to_file) {
+				// Serialize the set as a YAML sequence
+				m_file_content << util::add_spaces(m_level_of_indention) << set_name << ":\n";
+				for (const auto& element : set) {
+					std::string buffer;
+					util::convert_to_string<T>(element, buffer);
+					m_file_content << util::add_spaces(m_level_of_indention + 1) << "- " << buffer << "\n";
+				}
+			} else {																	// Deserialize the set from YAML
+
+				std::unordered_set<T> temp_set;
+				std::string line;
+				while (std::getline(m_file_content, line)) {							// Read until we find the set section
+					if (line.find(set_name + ":") != std::string::npos && 
+						util::measure_indentation(line) == m_level_of_indention) {
+						break;
+					}
+				}
+
+				while (std::getline(m_file_content, line)) {							// Read sequence elements
+					if (util::measure_indentation(line) <= m_level_of_indention) 		// End of set section
+						break;
+					
+					if (line.find("- ") != std::string::npos) {							// Extract element value
+
+						size_t dash_pos = line.find("- ");
+						std::string element_str = line.substr(dash_pos + 2);
+						T element;
+						util::convert_from_string(element_str, element);
+						temp_set.insert(element);
+					}
+				}
+				set = std::move(temp_set);
+			}
 			return *this;
 		}
 
-
+		
 	private:
 
 		void serialize();

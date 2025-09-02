@@ -60,9 +60,8 @@ namespace AT::crash_handler {
 
 		// Execute in reverse order of registration
 		for (auto it = s_user_functions.rbegin(); it != s_user_functions.rend(); ++it) {
-			if (!*it) {
+			if (!*it)
 				continue;
-			}
 
 			try {
 				(*it)();
@@ -72,6 +71,7 @@ namespace AT::crash_handler {
 				LOG(Error, "Unknown exception in crash handler function");
 			}
 		}
+		LOG(Trace, "User functions have been executed");
 	}
 
 
@@ -82,25 +82,26 @@ namespace AT::crash_handler {
 		SIGBUS, SIGPOLL, SIGPROF, SIGSYS, SIGTRAP, SIGVTALRM, SIGXCPU, SIGXFSZ,                                             // SUSv2 + POSIX.1-2001 signals
 		SIGIOT, SIGSTKFLT, SIGIO, SIGPWR,                                                                                   // Various other signals
 	};
-	std::vector<std::pair<int, struct sigaction>> g_old_sigactions;
+	std::vector<std::pair<int, struct sigaction>> g_old_sig_actions;
 
 	void detach() {
 
-		while(!g_old_sigactions.empty()) {
-			auto const& p = g_old_sigactions.back();
+		while(!g_old_sig_actions.empty()) {
+			auto const& p = g_old_sig_actions.back();
 			auto signal = p.first;
 			auto const& oldact = p.second;
 			if(0 != sigaction(signal, &oldact, nullptr))
 				throw std::system_error(errno, std::system_category());
-			g_old_sigactions.pop_back();
+			g_old_sig_actions.pop_back();
 		}
 	}
 
 	void signal_handler(const int signal) {
 
 		std::cout << "signal caught => terminating" << std::endl;
-		LOG(Fatal, "crash_hander caught signal [" << signal << "]")
+		LOG(Fatal, "crash_handler caught signal [" << signal << "]")
 		execute_user_functions();
+		std::quick_exit(1);			// Directly terminate without clean shutdown
 		// detach();
 	}
 
@@ -112,7 +113,7 @@ namespace AT::crash_handler {
 		sigfillset(&act.sa_mask);
 		act.sa_flags = SA_RESETHAND;
 
-		// Some signals are synonyms for each other. Some are explictly specified
+		// Some signals are synonyms for each other. Some are explicitly specified
 		// as such, but others may just be implemented that way on specific
 		// systems. So we'll remove duplicate entries here before we loop through
 		// all the signal numbers.
@@ -120,7 +121,7 @@ namespace AT::crash_handler {
 		sort(begin(unique_signals), end(unique_signals));
 		unique_signals.erase(unique(begin(unique_signals), end(unique_signals)), end(unique_signals));
 		try {
-			g_old_sigactions.reserve(unique_signals.size());
+			g_old_sig_actions.reserve(unique_signals.size());
 			for(auto signal : unique_signals) {
 				struct sigaction oldact;
 				if(0 != sigaction(signal, nullptr, &oldact))
@@ -132,7 +133,7 @@ namespace AT::crash_handler {
 
 						throw std::system_error(errno, std::system_category());
 					}
-					g_old_sigactions.push_back({signal, oldact});
+					g_old_sig_actions.push_back({signal, oldact});
 				}
 			}
 		}

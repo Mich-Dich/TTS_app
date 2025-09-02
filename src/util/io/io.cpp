@@ -2,23 +2,21 @@
 #include "util/pch.h"
 
 #ifdef PLATFORM_WINDOWS
-
 	#include <Windows.h>
 	#include <Psapi.h>
 	#include <TlHelp32.h>
-
 #elif defined(PLATFORM_LINUX)
-
 	#include <dirent.h>
 	#include <unistd.h>
 	#include <sys/types.h>
 	#include <sys/stat.h>
-
 #else
 	#error undefined platform
 #endif
 
 #include "io.h"
+
+
 
 namespace AT::io {
 
@@ -96,6 +94,7 @@ namespace AT::io {
 		
 		return true;
 	}
+
 
 	std::vector<std::string> get_processes_using_file(const std::wstring& filePath) {
 
@@ -203,13 +202,18 @@ namespace AT::io {
 
 	}
 
+
 	bool is_directory(const std::filesystem::path& path)								{ return std::filesystem::is_directory(path); }
+
 
 	bool is_file(const std::filesystem::path& path)										{ return std::filesystem::is_regular_file(path); }
 
+
 	bool is_hidden(const std::filesystem::path& path)									{ return path.filename().string()[0] == '.'; }
 
+
 	const std::filesystem::path get_absolute_path(const std::filesystem::path& path)	{ return std::filesystem::absolute(path); }
+
 
 	std::vector<std::filesystem::path> get_files_in_dir(const std::filesystem::path& path) {
 
@@ -221,6 +225,7 @@ namespace AT::io {
 		return files;
 	}
 
+
 	std::vector<std::filesystem::path> get_folders_in_dir(const std::filesystem::path& path) {
 		std::vector<std::filesystem::path> folders;
 		for (const auto& entry : std::filesystem::directory_iterator(path))
@@ -230,6 +235,7 @@ namespace AT::io {
 		return folders;
 	}
 
+
 	bool write_to_file(const char* data, const std::filesystem::path& filename) {
 
 		std::ofstream outStream(filename.string());
@@ -238,5 +244,5 @@ namespace AT::io {
 		outStream.close();
 		return true;
 	}
-
+	
 }

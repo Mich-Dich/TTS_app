@@ -5,11 +5,33 @@
 namespace AT::crash_handler {
     
 
+    // Installs crash and termination signal/exception handlers.
+    // 
+    // On Linux:
+    //   - Registers custom handlers for various POSIX signals (e.g., SIGINT, SIGTERM, SIGSEGV).
+    //   - Saves the previous signal actions so they can be restored later.
+    //   - Ensures duplicate signals are filtered out before registration.
+    // 
+    // On Windows:
+    //   - Installs an unhandled exception filter via SetUnhandledExceptionFilter().
+    //   - Adds a vectored exception handler to intercept breakpoint and crash events.
     //
+    // @throws std::system_error If a signal handler fails to install on Linux.
+    // @note Call detach() to restore the previous state when the crash handler is no longer needed.
     void attach();
 
 
+    // Removes previously installed crash and termination signal/exception handlers.
     //
+    // On Linux:
+    //   - Restores the old signal handlers saved during attach().
+    //   - Clears the internal list of tracked signals.
+    //
+    // On Windows:
+    //   - Restores the previous unhandled exception filter.
+    //   - Removes the vectored exception handler if one was installed.
+    //
+    // @throws std::system_error If restoring a signal handler fails on Linux.
     void detach();
 
 

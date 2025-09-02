@@ -80,8 +80,8 @@ namespace AT {
 		glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
 		glfwWindowHint(GLFW_MAXIMIZED, (m_data.size_state == window_size_state::fullscreen || m_data.size_state == window_size_state::fullscreen_windowed) ? GLFW_TRUE : GLFW_FALSE);
 	
-		int max_posible_height = 0;
-		int max_posible_width = 0;
+		int max_possible_height = 0;
+		int max_possible_width = 0;
 		int monitor_count;
 		auto monitors = glfwGetMonitors(&monitor_count);
 	
@@ -89,8 +89,8 @@ namespace AT {
 	
 			int xpos, ypos, width, height;
 			glfwGetMonitorWorkarea(monitors[x], &xpos, &ypos, &width, &height);
-			max_posible_height = math::max(max_posible_height, height);
-			max_posible_width = math::max(max_posible_width, width);
+			max_possible_height = math::max(max_possible_height, height);
+			max_possible_width = math::max(max_possible_width, width);
 	
 			LOG(Trace, "Monitor: " << x << " data: " << xpos << " / " << ypos << " / " << width << " / " << height);
 		}
@@ -102,8 +102,8 @@ namespace AT {
 			.entry(KEY_VALUE(logo_path));
 	
 		// ensure window is never bigger than possible OR smaller then logical
-		m_data.height = math::clamp((int)m_data.height, 200, max_posible_height);
-		m_data.width = math::clamp((int)m_data.width, 300, max_posible_width);
+		m_data.height = math::clamp((int)m_data.height, 200, max_possible_height);
+		m_data.width = math::clamp((int)m_data.width, 300, max_possible_width);
 		LOG(Trace, "Creating window [" << m_data.title << " width: " << m_data.width << "  height: " << m_data.height << "]");
 		m_Window = glfwCreateWindow(static_cast<int>(m_data.width), static_cast<int>(m_data.height), m_data.title.c_str(), nullptr, nullptr);
 	
@@ -141,7 +141,7 @@ namespace AT {
 			|| m_data.size_state == window_size_state::fullscreen_windowed)
 			glfwMaximizeWindow(m_Window);
 	
-		bind_event_calbacks();
+		bind_event_callbacks();
 	}
 	
 	window::~window() {
@@ -153,17 +153,17 @@ namespace AT {
 		int loc_pos_y;
 		glfwGetWindowPos(m_Window, &loc_pos_x, &loc_pos_y);
 		m_data.pos_x = loc_pos_x + 4;								// window padding
-		m_data.pos_y = loc_pos_y + 25 + titlebar_vertical_offset;	// [custom titlebar height offset] + [aximize offset]
+		m_data.pos_y = loc_pos_y + 25 + titlebar_vertical_offset;	// [custom titlebar height offset] + [maximize offset]
 	
 		glfwDestroyWindow(m_Window);
 		glfwTerminate();
 		LOG_SHUTDOWN
 	}
 	
-	// ============================================================================== inplemantation ==============================================================================
+	// ============================================================================== implementation ==============================================================================
 	
 	
-	void window::bind_event_calbacks() {
+	void window::bind_event_callbacks() {
 	
 		glfwSetWindowRefreshCallback(m_Window, [](GLFWwindow* window) {
 			
@@ -259,7 +259,7 @@ namespace AT {
 	
 		glfwPollEvents();
 	
-		// prossess constom queue
+		// prosesss custom queue
 		std::scoped_lock<std::mutex> lock(m_event_queue_mutex);
 		while (m_event_queue.size() > 0) {
 	
@@ -287,7 +287,7 @@ namespace AT {
 		
 		LOG(Trace, "minimizing window");
 		glfwIconifyWindow(m_Window);
-		m_data.size_state = window_size_state::minimised;
+		m_data.size_state = window_size_state::minimized;
 		//application::set_render_state(system_state::inactive);
 	}
 	
@@ -300,7 +300,7 @@ namespace AT {
 	
 	void window::maximize_window() { 
 		
-		LOG(Trace, "maximising window");
+		LOG(Trace, "maximizing window");
 		glfwMaximizeWindow(m_Window);
 		m_data.size_state = window_size_state::fullscreen_windowed;
 		//application::set_render_state(system_state::active);
