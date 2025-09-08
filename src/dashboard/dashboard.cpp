@@ -26,7 +26,7 @@
 
 namespace AT {
 
-#if defined(PLATFORM_WINDOWS)
+#ifdef _WIN32
     #include <Windows.h>
     #pragma comment(lib, "winmm.lib")
 #endif
@@ -39,8 +39,6 @@ namespace AT {
         util::init_qt();
     #endif
 
-        initialize_python();
-
 		const std::filesystem::path icon_path = util::get_executable_path() / ASSET_DIR / "images";
 #define LOAD_ICON(name)			m_##name##_icon = create_ref<image>(icon_path / #name ".png", image_format::RGBA)
 		LOAD_ICON(generate);
@@ -49,7 +47,6 @@ namespace AT {
 		LOAD_ICON(settings);
 		LOAD_ICON(library);
 #undef	LOAD_ICON
-
     }
     
     
@@ -58,9 +55,6 @@ namespace AT {
     #if defined(PLATFORM_LINUX)
         util::shutdown_qt();
     #endif
-
-        if (Py_IsInitialized())
-            finalize_python();
 
         m_generate_icon.reset();
         m_audio_icon.reset();
@@ -95,34 +89,26 @@ namespace AT {
         
         std::filesystem::create_directories(util::get_executable_path() / "audio");
         serialize(serializer::option::load_from_file);
-        m_last_save_time = util::get_system_time();
         return true;
     }
 
-    // shutdown will be called befor any system is deinitialize
+
+    void dashboard::finalize_init() {
+
+        initialize_python();
+    }
+
+    // shutdown will be called before any system is deinitialize
     bool dashboard::shutdown() {
 
-        // Save open projects
-        for (auto& proj : m_open_projects) {
+        serialize(serializer::option::save_to_file);
 
-            std::filesystem::path project_path{};
-            if (m_project_paths.contains(proj.name)) {              // get project path (already saved or request from user)
-                project_path = m_project_paths.at(proj.name);
-            } else {
-                project_path = util::file_dialog("Select location for unsaved project [" + m_current_project + "]", {}, true) / m_current_project / m_current_project;       // use [m_current_project] twice to make a directory and a file
-                project_path.replace_extension(".yml");
-            }
-
-            LOG(Trace, "saving project [" << proj.name << "] to [" << project_path.generic_string() << "]")
-            serialize_project(proj, project_path, serializer::option::save_to_file);
-        }
-        serialize(serializer::option::save_to_file);                    // save general information
-
-
+        // Acquire GIL if Python is initialized
         if (Py_IsInitialized())
             PyGILState_Ensure();
 
         if (m_worker_running) {                                         // Signal worker to stop
+
             {
                 std::lock_guard<std::mutex> lock(m_queue_mutex);
                 m_generation_queue = {};
@@ -168,31 +154,7 @@ namespace AT {
     }
 
 
-    void dashboard::update(f32 delta_time)  {
-
-        if (m_last_save_time.is_older_than(util::get_system_time(), m_save_interval_sec)) {
-
-            LOG(Trace, "Auto saving")
-            serialize(serializer::option::save_to_file);
-
-            u32 save_counter = 0;
-            for (auto& proj : m_open_projects) {
-
-                std::filesystem::path project_path{};
-                if (proj.saved || !m_project_paths.contains(proj.name))        // Save projects that need it and have a path registered
-                    continue;
-
-                project_path = m_project_paths.at(proj.name);
-                LOG(Trace, "saving project [" << proj.name << "] to [" << project_path.generic_string() << "]")
-                serialize_project(proj, project_path, serializer::option::save_to_file);
-                save_counter++;
-            }
-
-            LOG(Trace, "saved [" << save_counter << "] projects")
-
-            m_last_save_time = util::get_system_time();
-        }
-    }
+    void dashboard::update(f32 delta_time)  { }
 
 
     void dashboard::on_event(event& event)  { }
@@ -202,6 +164,7 @@ namespace AT {
     // --------------------------------------------------------------------------------------------------------------
 
     void dashboard::draw(f32 delta_time) {
+
         auto viewport = ImGui::GetMainViewport();
         
         // Create a fullscreen window without decorations
@@ -332,9 +295,9 @@ namespace AT {
 
                 const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
-                SECTION_HEADER(m_settings_icon, "Settings");
+                SECTION_HEADER(m_settings_icon, "Kokoro settings");
 
-                UI::begin_table("Kokoro Settings");
+                UI::begin_table("kokoro_settings", false);
                 UI::table_row_slider("Voice Speed", m_voice_speed, .5f, 2.f, .05f);
                 UI::table_row([]() { ImGui::Text("Voice Type"); },
                     [&]() {
@@ -366,15 +329,6 @@ namespace AT {
                 );
                 UI::end_table();
 
-                UI::shift_cursor_pos(0, 20);
-
-                UI::begin_table("Save Settings");
-                UI::table_row("Auto Save", m_auto_save);
-                if (!m_auto_save) ImGui::BeginDisabled();
-                UI::table_row_slider<u32>("Intervals", m_save_interval_sec, 0, 1000, 1);
-                if (!m_auto_save) ImGui::EndDisabled();
-                UI::end_table();
-
                 ImGui::Separator();
                 if (ImGui::Button("Back"))
             	    m_sidebar_status = sidebar_status::menu;
@@ -391,7 +345,7 @@ namespace AT {
                 UI::shift_cursor_pos(0.f, 10.f);
                 ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "RECENT PROJECTS");
                 ImGui::Separator();
-                ImGui::BeginChild("project_list", ImVec2(0, content_size.y - 390.f), true);               // Project list with scrollable area
+                ImGui::BeginChild("project_list", ImVec2(0, content_size.y - (m_open_projects.empty() ? 200.f : 350.f)), true);               // Project list with scrollable area
                 {
                     // Create a vector to store keys to remove (since we can't modify map while iterating)
                     static std::vector<std::string> keys_to_remove;
@@ -400,37 +354,27 @@ namespace AT {
                     // Iterate through the map
                     size_t i = 0;
                     for (const auto& [project_name, project_path] : m_project_paths) {
+                        ImGui::PushID(i++);
 
-                        auto load_project = [&]( ) {
-                            
+                        auto load_proj = [this, &project_name, &project_path]() {
+
                             LOG(Trace, "open [" << project_name << "] from [" << project_path << "]")
                             project loaded_project{};
                             serialize_project(loaded_project, project_path, serializer::option::load_from_file);
-
-                            // only add project to m_open_project if not already contained
-                            bool contains = false;
-                            for (const auto& proj : m_open_projects)
-                                if (proj.name == loaded_project.name) {
-                                    contains = true;
-                                    break;
-                                }
-
-                            if (!contains)
-                                m_open_projects.push_back(loaded_project);
-
-                            m_current_project = project_name;           // TODO: should set selected project to be the currently open tab
+                            m_open_projects.push_back(loaded_project);
                         };
 
-                        ImGui::PushID(i++);
                         const bool is_selected = (!m_open_projects.empty() && m_current_project == project_name);
-                        if (ImGui::Selectable(project_name.c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick))
-                            if (ImGui::IsMouseDoubleClicked(0))
-                                load_project();
+                        if (ImGui::Selectable(project_name.c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                            if (ImGui::IsMouseDoubleClicked(0)) {
+                                load_proj();
+                            }
+                        }
 
                         // Context menu for project options
                         if (ImGui::BeginPopupContextItem()) {
                             if (ImGui::MenuItem("Open"))
-                                load_project();
+                                load_proj();
 
                             if (ImGui::MenuItem("Remove from list"))
                                 keys_to_remove.push_back(project_name);
@@ -450,9 +394,11 @@ namespace AT {
                 }
                 ImGui::EndChild();
                 
+                const f32 bu_width = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.f;
+
                 // Action buttons
                 UI::shift_cursor_pos(0.f, 20.f);
-                if (ImGui::Button("New Project", ImVec2(-1, 0))) {
+                if (ImGui::Button("New Project", ImVec2(bu_width, 0))) {
 
                     m_open_projects.emplace_back();
 
@@ -476,14 +422,14 @@ namespace AT {
                     m_open_projects.back().name = candidate_name;
                 }
                 
-                if (ImGui::Button("Open Project...", ImVec2(-1, 0))) {
+                ImGui::SameLine();
+                if (ImGui::Button("Open Project...", ImVec2(bu_width, 0))) {
                     
+                    // <TUTORIAL> ignore this for the tutorial and try to m
                     // TODO: Implement file dialog for opening projects
-                    // const std::filesystem::path project_path = util::file_dialog("open TTS Project");
-
                 }
                 
-                if (!m_open_projects.empty() && ImGui::Button("Save Project", ImVec2(-1, 0))) {
+                if (!m_open_projects.empty() && ImGui::Button("Save Project", ImVec2(bu_width, 0))) {
 
                     LOG(Trace, "Saving Project [" << m_current_project << "]")
 
@@ -505,7 +451,7 @@ namespace AT {
                         
                         // TODO: should ask the user for a location (file dialog)
                         std::filesystem::path proj_path = util::file_dialog("Select location for [" + m_current_project + "]", {}, true) / m_current_project / m_current_project;       // use [m_current_project] twice to make a directory and a file
-                        proj_path.replace_extension(".yml");
+                        proj_path.replace_extension(PROJECT_EXTENTION);
                         LOG(Trace, "selected directory [" << proj_path << "]")
                         for (auto& proj : m_open_projects)                  // get currently open project-tap
                             if (m_current_project == proj.name) {
@@ -519,32 +465,67 @@ namespace AT {
                     }
                 }
                 
+                ImGui::SameLine();
+                if (!m_open_projects.empty() && ImGui::Button("Save as", ImVec2(bu_width, 0))) {
+
+
+                    // TODO: should ask the user for a location (file dialog)
+                    std::filesystem::path proj_path = util::file_dialog("Select location for [" + m_current_project + "]", {}, true) / m_current_project / m_current_project;       // use [m_current_project] twice to make a directory and a file
+                    VALIDATE(!proj_path.empty(), break, "", "Failed to select a location")
+
+                    proj_path.replace_extension(PROJECT_EXTENTION);
+                    LOG(Trace, "selected directory [" << proj_path << "]")
+                    for (auto& proj : m_open_projects)                  // get currently open project-tap
+                        if (m_current_project == proj.name) {
+
+                            serialize_project(proj, proj_path, serializer::option::save_to_file);
+                            proj.saved = true;
+                        }
+
+                    m_project_paths[m_current_project] = proj_path;
+                    serialize(serializer::option::save_to_file);
+
+                    LOG(Trace, "Saving Project [" << m_current_project << "] to [" << proj_path << "]")
+                }
+                
                 UI::shift_cursor_pos(0.f, 20.f);
                 ImGui::Separator();
                 UI::shift_cursor_pos(0.f, 10.f);
                 
                 // Current project info (if any project is open)
                 if (!m_open_projects.empty()) {
-                    for (auto& proj : m_open_projects)                  // get currently open project-tap
+                    for (auto& proj : m_open_projects) {
                         if (m_current_project == proj.name) {
-                            
                             ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "CURRENT PROJECT");
-
-                            UI::shift_cursor_pos(0.f, 3.f);
-                            ImGui::Text("Name: ");
-                            ImGui::SameLine();
-                            UI::shift_cursor_pos(0.f, -4.f);
-                            constexpr size_t TITLE_SIZE = 512;
-                            static char title_buffer[TITLE_SIZE];
-                            strncpy(title_buffer, m_current_project.c_str(), TITLE_SIZE - 1);
-                            title_buffer[TITLE_SIZE - 1] = '\0';
-                            if (ImGui::InputText("##input_project_title", title_buffer, TITLE_SIZE, ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput)) {
-
-                                proj.name = title_buffer;
-                                m_current_project = title_buffer;
+                            
+                            // Project name editing
+                            static bool is_editing = false;
+                            static char edit_buffer[256] = ""; // Use char array instead of std::string
+                            
+                            if (is_editing) {
+                                ImGui::SetNextItemWidth(-1);
+                                if (ImGui::InputText("##proj_name", edit_buffer, IM_ARRAYSIZE(edit_buffer), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                    // Apply changes when Enter is pressed
+                                    proj.name = edit_buffer;
+                                    m_current_project = edit_buffer;
+                                    is_editing = false;
+                                    proj.saved = false; // Mark as unsaved
+                                }
+                                if (!ImGui::IsItemActive() && ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                                    // Cancel editing on Escape
+                                    is_editing = false;
+                                }
+                            } else {
+                                ImGui::TextWrapped("Name: %s", proj.name.c_str());
+                                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
+                                    // Start editing on double-click
+                                    strncpy(edit_buffer, proj.name.c_str(), IM_ARRAYSIZE(edit_buffer) - 1);
+                                    edit_buffer[IM_ARRAYSIZE(edit_buffer) - 1] = '\0'; // Ensure null termination
+                                    is_editing = true;
+                                }
                             }
 
-
+                            // Rest of the information
                             if (!proj.description.empty())
                                 ImGui::TextWrapped("Description: %s", proj.description.c_str());
                             
@@ -556,13 +537,18 @@ namespace AT {
                             
                             ImGui::TextDisabled("Sections: %zu | Fields: %zu", total_sections, total_fields);
                             ImGui::TextDisabled("Status: %s", proj.saved ? "Saved" : "Unsaved");
-                            const std::string path = m_project_paths.contains(m_current_project) ? m_project_paths.at(m_current_project) : "<not set>";
+                            const std::string path = m_project_paths.contains(m_current_project) ? 
+                                                    m_project_paths.at(m_current_project) : "<not set>";
                             ImGui::TextDisabled("Location: %s", path.c_str());
                         }
+                    }
                 }
                 
                 UI::shift_cursor_pos(0.f, 20.f);
-                ImGui::Separator();
+
+                if (!m_open_projects.empty())
+                    ImGui::Separator();
+
                 if (ImGui::Button("Back", ImVec2(-1, 0)))
                     m_sidebar_status = sidebar_status::menu;
 
@@ -574,7 +560,7 @@ namespace AT {
     #undef SECTION_HEADER
 
         ImGui::EndChild();
-        UI::separator_vertical();
+        UI::seperation_vertical();
         ImGui::SameLine();
     }
 
@@ -595,147 +581,126 @@ namespace AT {
     
     void dashboard::draw_section(project& project_data, section& section_data) {
         
-        section_data.open = ImGui::CollapsingHeader(section_data.title.c_str(), section_data.open ? ImGuiTreeNodeFlags_DefaultOpen : ImGuiTreeNodeFlags_None);
-        if (section_data.open) {
+        // Section styling
+        ImGui::PushID(&section_data);
+        ImVec4 bg_color = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
+        bg_color.w *= 1.05f;                                                                        // Darker background
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
+        
+        const float width = ImGui::GetContentRegionAvail().x;
+        const f32 padding_x = ImGui::GetStyle().FramePadding.y * 2.0f;
+        const f32 button_size = 105.f;
 
-            // Section styling
-            ImGui::PushID(&section_data);
-            ImVec4 bg_color = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
-            bg_color.w *= 1.05f;                                                                        // Darker background
-            ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
-            
-            const float width = ImGui::GetContentRegionAvail().x;
-            const f32 padding_x = ImGui::GetStyle().FramePadding.y * 2.0f;
-            const f32 button_size = 105.f;
-
-            ImGui::Separator();
-
-            constexpr size_t TITLE_SIZE = 512;
-            static char title_buffer[TITLE_SIZE];
-            strncpy(title_buffer, section_data.title.c_str(), TITLE_SIZE - 1);
-            title_buffer[TITLE_SIZE - 1] = '\0';
-            ImGui::PushStyleColor(ImGuiCol_FrameBg, UI::get_default_gray_ref());
-            ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("header_0"));
-            if (ImGui::InputText("##input_field_title", title_buffer, TITLE_SIZE, ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput))
-                section_data.title = title_buffer;
-            ImGui::PopFont();
-            ImGui::PopStyleColor();
-
-            for (size_t i = 0; i < section_data.input_fields.size(); i++) {                                                             // Input fields
-
-                auto& field = section_data.input_fields[i];
-                ImGui::PushID(&field); // Ensure unique ID if multiple fields exist
-
-                const bool field_generating = field.generating;
-                if (field_generating)
-                    ImGui::BeginDisabled();
-
-                const ImVec2 text_size = ImGui::CalcTextSize(field.content.c_str(), nullptr, false, width);                 // Calculate required height based on wrapped text
-                const float height = math::max(text_size.y + padding_x, ImGui::GetTextLineHeight() * 1.5f);                 // Set height (text height + frame padding)
-                constexpr size_t BUFFER_SIZE = 4096;
-                static char buffer[BUFFER_SIZE];
-                strncpy(buffer, field.content.c_str(), BUFFER_SIZE - 1);
-                buffer[BUFFER_SIZE - 1] = '\0';
-                if (ImGui::InputTextMultiline("##InputField", buffer, BUFFER_SIZE, ImVec2(width - button_size, height), ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput)) {
-
-                    field.content = buffer;
-                    project_data.saved = false;
-                }
+        ImGui::Separator();
+        // UI::big_text((section_data.title).c_str());
 
 
-                // Right-click context menu for deletion
-                // In the draw_section function, modify the context menu section:
-                if (ImGui::BeginPopupContextItem("field_context")) {
-                    if (ImGui::MenuItem("Delete")) {
-                        if (field.playing_audio)
-                            stop_audio();
-                        
-                        section_data.input_fields.erase(section_data.input_fields.begin() + i);
-                        project_data.saved = false;
-                        ImGui::EndPopup();
-                        ImGui::PopID();
-                        if (field_generating) 
-                            ImGui::EndDisabled();
-                        continue;
-                    }
-                    ImGui::EndPopup();
-                }
+        constexpr size_t TITLE_SIZE = 512;
+        static char title_buffer[TITLE_SIZE];
+        strncpy(title_buffer, section_data.title.c_str(), TITLE_SIZE - 1);
+        title_buffer[TITLE_SIZE - 1] = '\0';
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, UI::get_default_gray_ref());
+        ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("header_0"));
+        if (ImGui::InputText("##input_field_title", title_buffer, TITLE_SIZE, ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput))
+            section_data.title = title_buffer;
+        ImGui::PopFont();
+        ImGui::PopStyleColor();
 
+        for (size_t i = 0; i < section_data.input_fields.size(); i++) {                                                             // Input fields
 
-                ImGui::SameLine();
-                if (ImGui::ImageButton("##generate_button", m_generate_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
-                    
-                    field.generating = true;
+            auto& field = section_data.input_fields[i];
+            ImGui::PushID(&field); // Ensure unique ID if multiple fields exist
 
-                    {                                                       // Add to generation queue
-                        std::lock_guard<std::mutex> lock(m_queue_mutex);
-                        m_generation_queue.push(field.ID);
-                    }
-                    generation_worker();
-                }
-                
-                std::filesystem::path audio_path{};
-                if (m_project_paths.contains(project_data.name))
-                    audio_path = m_project_paths.at(project_data.name).parent_path() / "audio" / (util::to_string(field.ID) + ".wav");
-                    
-                const bool has_audio = !audio_path.empty() && std::filesystem::exists(audio_path);
+            const ImVec2 text_size = ImGui::CalcTextSize(field.content.c_str(), nullptr, false, width);                 // Calculate required height based on wrapped text
+            const float height = math::max(text_size.y + padding_x, ImGui::GetTextLineHeight() * 1.5f);                 // Set height (text height + frame padding)
 
-                ImGui::SameLine();
-                if (!has_audio)      ImGui::BeginDisabled();
-                if (ImGui::ImageButton("##play_audio", (field.playing_audio) ? m_stop_icon->get() : m_audio_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1)))
-                    if (field.playing_audio)
-                        stop_audio();
-                    else
-                        play_audio(field, audio_path);            // can only be pressed if audio found
-                if (!has_audio)      ImGui::EndDisabled();
+            constexpr size_t BUFFER_SIZE = 4096;
+            static char buffer[BUFFER_SIZE];
+            strncpy(buffer, field.content.c_str(), BUFFER_SIZE - 1);
+            buffer[BUFFER_SIZE - 1] = '\0';
 
-                if (field_generating)
-                    ImGui::EndDisabled();
+            const bool field_generating = field.generating;
+            if (field_generating)
+                ImGui::BeginDisabled();
 
-                if (i > 0) {
+            if (ImGui::InputTextMultiline("##InputField", buffer, BUFFER_SIZE, ImVec2(width - button_size, height), ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_AllowTabInput)) {
 
-                    ImGui::SameLine(0, 10);
-                    if (ImGui::Button("^")) {
-
-                        std::swap(section_data.input_fields[i], section_data.input_fields[i -1]);
-                        project_data.saved = false;
-                    }
-                }
-
-                if (i < section_data.input_fields.size() -1)  {
-
-                    ImGui::SameLine(0, (i) ? -1 : 29);                              // move "down" button for first row
-                    if (ImGui::Button("v")) {
-
-                        std::swap(section_data.input_fields[i], section_data.input_fields[i +1]);
-                        project_data.saved = false;
-                    }
-                }
-                
-                ImGui::PopID();
-            }
-            
-            if (ImGui::Button("+ Add Field")) {                                     // Add field button
-                
-                section_data.input_fields.push_back(input_field{});
+                field.content = buffer;
                 project_data.saved = false;
             }
-            
-            ImGui::SameLine(0, 20);
-            if (ImGui::Button("Generate All")) {                                    // Generate all button for this section
 
-                std::lock_guard<std::mutex> lock(m_queue_mutex);
-                for (size_t i = 0; i < section_data.input_fields.size(); i++) {
+                
+            ImGui::SameLine();
+            if (ImGui::ImageButton("##generate_button", m_generate_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
+                
+                field.generating = true;
 
-                    m_generation_queue.push(section_data.input_fields[i].ID);       // Add to generation queue
-                    section_data.input_fields[i].generating = true;                 // set all fields to generate
+                {                                                       // Add to generation queue
+                    std::lock_guard<std::mutex> lock(m_queue_mutex);
+                    m_generation_queue.push(field.ID);
                 }
                 generation_worker();
             }
+            
+            ImGui::SameLine();
+            const std::filesystem::path audio_path = util::get_executable_path() / "audio" / (util::to_string(field.ID) + ".wav");
+            const bool has_audio = std::filesystem::exists(audio_path);
 
-            ImGui::PopStyleColor();
+            if (!has_audio)      ImGui::BeginDisabled();
+            if (ImGui::ImageButton("##play_audio", (field.playing_audio) ? m_stop_icon->get() : m_audio_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1)))
+                if (field.playing_audio)
+                    stop_audio();
+                else
+                    play_audio(field);            // can only be pressed if audio found
+            if (!has_audio)      ImGui::EndDisabled();
+
+            if (field_generating)
+                ImGui::EndDisabled();
+
+            if (i > 0) {
+
+                ImGui::SameLine(0, 10);
+                if (ImGui::Button("^")) {
+
+                    std::swap(section_data.input_fields[i], section_data.input_fields[i -1]);
+                    project_data.saved = false;
+                }
+            }
+
+            if (i < section_data.input_fields.size() -1)  {
+
+                ImGui::SameLine(0, (i) ? -1 : 29);                              // move "down" button for first row
+                if (ImGui::Button("v")) {
+
+                    std::swap(section_data.input_fields[i], section_data.input_fields[i +1]);
+                    project_data.saved = false;
+                }
+            }
+            
             ImGui::PopID();
         }
+        
+        if (ImGui::Button("+ Add Field")) {                                     // Add field button
+            
+            section_data.input_fields.push_back(input_field{});
+            project_data.saved = false;
+        }
+        
+        
+        ImGui::SameLine(0, 20);
+        if (ImGui::Button("Generate All")) {                                    // Generate all button for this section
+
+            std::lock_guard<std::mutex> lock(m_queue_mutex);
+            for (size_t i = 0; i < section_data.input_fields.size(); i++) {
+
+                m_generation_queue.push(section_data.input_fields[i].ID);       // Add to generation queue
+                section_data.input_fields[i].generating = true;                 // set all fields to generate
+            }
+            generation_worker();
+        }
+
+        ImGui::PopStyleColor();
+        ImGui::PopID();
     }
 
     // --------------------------------------------------------------------------------------------------------------
@@ -746,7 +711,10 @@ namespace AT {
 
         m_worker_running = true;
         m_worker_future = std::async(std::launch::async, [this]() {
+
             while (true) {
+                
+                LOG(Trace, "Next iteration")
 
                 UUID generation_task_ID;
                 {                                                           // Get next task
@@ -762,12 +730,10 @@ namespace AT {
                 // Find Corresponding string
                 std::string text_to_generate;
                 bool found = false;
-                size_t project_index = 0;
-                size_t section_index = 0;
-                size_t field_index = 0;
-                for (project_index = 0; project_index < m_open_projects.size(); project_index++) {
-                    for (section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
-                        for (field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                
+                for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                    for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                        for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
                             if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
                                 text_to_generate = m_open_projects[project_index].sections[section_index].input_fields[field_index].content;
                                 found = true;
@@ -778,30 +744,31 @@ namespace AT {
                     }
                     if (found) break;
                 }
+
                 VALIDATE(found, continue, "Found text corresponding to ID [" << generation_task_ID << "]", "Could not find text corresponding to ID [" << generation_task_ID << "]")
-
-
-                std::filesystem::path audio_path{};
-                if (m_project_paths.contains(m_open_projects[project_index].name))
-                    audio_path = m_project_paths.at(m_open_projects[project_index].name).parent_path() / "audio";
-
-                if (audio_path.empty()) {
-
-                    std::filesystem::path project_path = util::file_dialog("Select location for [" + m_open_projects[project_index].name + "]", {}, true) / m_open_projects[project_index].name / m_open_projects[project_index].name;       // use [m_open_projects[project_index].name] twice to make a directory and a file
-                    project_path.replace_extension(".yml");
-                    m_project_paths[m_open_projects[project_index].name] = project_path;
-                    serialize(serializer::option::save_to_file);
-                    audio_path = project_path.parent_path() / "audio";
-                }
-
                 
                 // Generate audio
-                std::filesystem::create_directories(audio_path.parent_path());
-                std::filesystem::path output_path = audio_path / (util::to_string(generation_task_ID) + ".wav");
+                std::filesystem::path output_path = util::get_executable_path() / "audio" / (util::to_string(generation_task_ID) + ".wav");
+                std::filesystem::create_directories(output_path.parent_path());
                 bool success = call_python_generate_tts(text_to_generate, output_path.string());
                 VALIDATE(success, , "Successfully generated audio as [" << output_path.string() << "]", "Could not generate audio for [" << output_path.string() << "]")
                 
-                m_open_projects[project_index].sections[section_index].input_fields[field_index].generating = false;                     // update status
+                // need new search because user could re-arange the fields while generating
+                found = false;
+                for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                    for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                        for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                            if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
+                                m_open_projects[project_index].sections[section_index].input_fields[field_index].generating = false;                     // update status
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found) break;
+                    }
+                    if (found) break;
+                }
+                
             }
             
             LOG(Trace, "Worker finished")
@@ -887,8 +854,8 @@ namespace AT {
     // AUDIO
     // --------------------------------------------------------------------------------------------------------------
 
-    void dashboard::play_audio(input_field& field, const std::filesystem::path audio_path) {
-        // const std::filesystem::path audio_path = util::get_executable_path() / "audio" / (util::to_string(field.ID) + ".wav");
+    void dashboard::play_audio(input_field& field) {
+        const std::filesystem::path audio_path = util::get_executable_path() / "audio" / (util::to_string(field.ID) + ".wav");
         
     #ifdef PLATFORM_LINUX
         stop_audio(); // Stop any existing playback
@@ -1020,7 +987,6 @@ namespace AT {
             .vector(KEY_VALUE(project_data.sections), [&](serializer::yaml& yaml, u64 x) {
 
 				yaml.entry(KEY_VALUE(project_data.sections[x].title))
-                .entry(KEY_VALUE(project_data.sections[x].open))
                 .vector(KEY_VALUE(project_data.sections[x].input_fields), [&](serializer::yaml& yaml, u64 y) {
 
                     yaml.entry(KEY_VALUE(project_data.sections[x].input_fields[y].content))
@@ -1035,9 +1001,6 @@ namespace AT {
     void dashboard::serialize(const serializer::option option) {
 
         serializer::yaml(util::get_executable_path() / "config" / "project_data.yml", "project_data", option)
-            .entry(KEY_VALUE(m_current_project))
-            .entry(KEY_VALUE(m_auto_save))
-            .entry(KEY_VALUE(m_save_interval_sec))
             .unordered_map(KEY_VALUE(m_project_paths));
     }
 

@@ -15,6 +15,8 @@
     #include <QApplication>
     #include <QFileDialog>
     #include <QString>
+    #include <QThread>
+    #include <QMetaObject>
     #include <sys/time.h>
     #include <ctime>
     #include <limits.h>
@@ -409,31 +411,43 @@ namespace AT::util {
 
     #elif defined(PLATFORM_LINUX)
    
-        VALIDATE(qt_app, return {}, "", "QApplication not initialized!")
+        VALIDATE(qt_app, return {}, "QApplication initialized", "QApplication not initialized!")
+
+        if (QThread::currentThread() != QApplication::instance()->thread()) {
+            std::filesystem::path result;
+            QMetaObject::invokeMethod(QApplication::instance(), [&]() {
+                result = file_dialog(title, filters, select_directory);
+            }, Qt::BlockingQueuedConnection);
+            return result;
+        }
+        LOG(Trace, "We're on the main GUI thread");
+
+        QWidget parent;
+        parent.setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint | Qt::WindowTitleHint);
+        parent.setWindowTitle(QString::fromUtf8(title.data()));
+        parent.hide(); // Hide parent window but keep dialog modal
 
         if (select_directory) {
-            QString dir = QFileDialog::getExistingDirectory(nullptr, QString::fromUtf8(title.data()), QString());       // Directory selection mode
+            LOG(Trace, "select directory");
+            QString dir = QFileDialog::getExistingDirectory(&parent, QString::fromUtf8(title.data()));
             return std::filesystem::path(dir.toStdString());
         }
-        
-        // File selection mode (original implementation)
+
         QString filterString;
         for (auto& filter : filters) {
-            // Replace semicolons with spaces
             std::string buffer = filter.second;
             size_t pos = 0;
             while ((pos = buffer.find(';', pos)) != std::string::npos) {
                 buffer.replace(pos, 1, " ");
                 pos += 1;
             }
-            
             filterString += QString::fromStdString(filter.first) + " (" + QString::fromStdString(buffer) + ");;";
         }
-        filterString.chop(2); // Remove the last ";;"
+        filterString.chop(2);
+        LOG(Trace, "finalized filter String");
 
         QString fileName = QFileDialog::getOpenFileName(nullptr, QString::fromUtf8(title.data()), QString(), filterString);
         return std::filesystem::path(fileName.toStdString());
-
     #endif
     }
 
@@ -498,12 +512,7 @@ namespace AT::util {
             std::replace(pat.begin(), pat.end(), ';', ' ');
             nameFilters << QString::fromStdString(f.first + " (" + pat + ")");
         }
-        QStringList files = QFileDialog::getOpenFileNames(
-            nullptr,
-            QString::fromUtf8(title.data()),
-            QString(),
-            nameFilters.join(";;")
-        );
+        QStringList files = QFileDialog::getOpenFileNames(nullptr, QString::fromUtf8(title.data()), QString(), nameFilters.join(";;"));
         std::vector<std::filesystem::path> results;
         for (const auto& qf : files)
             results.emplace_back(qf.toStdString());

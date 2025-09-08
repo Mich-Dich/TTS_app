@@ -26,7 +26,6 @@ namespace AT {
     };
 
     struct section {
-        bool                        open = true;        // collapsing header
         std::string                 title{};
         std::vector<input_field>    input_fields{};
     };
@@ -52,6 +51,7 @@ namespace AT {
         ~dashboard();
 
         bool init();
+        void finalize_init();
         void update(f32 delta_time);
         void draw(f32 delta_time);
         bool shutdown();
@@ -74,7 +74,7 @@ namespace AT {
         void generation_worker();
 
         // audio
-        void play_audio(input_field& field, const std::filesystem::path audio_path);
+        void play_audio(input_field& field);
         void stop_audio();
 
         void serialize_project(project& project_data, const std::filesystem::path path, const serializer::option option);
@@ -94,9 +94,8 @@ namespace AT {
         std::string                                                     m_current_project{};
         std::vector<project>                                            m_open_projects{};               // projects currently opened
         std::unordered_map<std::string, std::filesystem::path>          m_project_paths{};
-        // std::vector<std::pair<std::string, std::filesystem::path>>      m_project_paths{};
 
-        sidebar_status                                                  m_sidebar_status = sidebar_status::menu;
+        sidebar_status                                                  m_sidebar_status = sidebar_status::project_manager;     // start at PM because that is always the first step
 
         std::queue<UUID>                                                m_generation_queue{};
         std::mutex                                                      m_queue_mutex;
@@ -105,10 +104,6 @@ namespace AT {
         PyThreadState*                                                  m_python_thread_state = nullptr;
         PyObject*                                                       m_py_module = nullptr;
         PyObject*                                                       m_py_generate_tts_function = nullptr;
-
-        bool                                                            m_auto_save = true;
-        system_time                                                     m_last_save_time;
-        u32                                                             m_save_interval_sec = 300;
         const char*                                                     m_voice = "am_onyx";
         f32                                                             m_voice_speed = 1.2;
         std::string                                                     m_generation_status{};                          // Status messages

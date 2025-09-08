@@ -8,7 +8,7 @@
 // #define RENDER_API_VULKAN
 
 
-// collect timing-data from every magor function?
+// collect timing-data from every major function?
 #define PROFILE								    0	// general
 
 // log assert and validation behaviour?
@@ -22,6 +22,7 @@
 
 // Extension for project files
 #define PROJECT_EXTENTION    		".atproj"
+#define PROJECT_EXTENTION_SELECTOR  "*.atproj"
 
 // Configuration file extensions
 #define FILE_EXTENSION_CONFIG   	".yml"        	// Extension for YAML config files
@@ -41,4 +42,3 @@
 #define PROJECT_NAME				application::get().get_project_data().name
 
 #define ASSET_PATH					util::get_executable_path() / "assets"
-

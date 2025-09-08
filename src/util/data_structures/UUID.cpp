@@ -35,4 +35,3 @@
 		s_generated_UUIDs.erase(m_UUID);
 #endif // USE_EXPERIMENTAL_COLLISION_AVOIDANCE
 	}
-

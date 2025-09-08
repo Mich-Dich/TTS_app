@@ -29,7 +29,7 @@ namespace AT {
     bool application::s_running;
 
     application::application(int argc, char* argv[]) {
-        
+
         ASSERT(!s_instance, "", "Application already exists");
         LOG_INIT
         s_instance = this;
@@ -52,13 +52,13 @@ namespace AT {
         // ----------- user defined system -----------
         m_imgui_config = create_ref<UI::imgui_config>();
         m_dashboard = create_ref<dashboard>();
-        m_crash_subscription = AT::crash_handler::subscribe([this]() { m_dashboard->on_crash(); });
+        m_crash_sub = AT::crash_handler::subscribe([this]() { m_dashboard->on_crash(); });
     }
 
     application::~application() {
 
         m_dashboard.reset();
-        AT::crash_handler::unsubscribe(m_crash_subscription);
+        AT::crash_handler::unsubscribe(m_crash_sub);
 		m_imgui_config.reset();
         
         m_renderer->resource_free();         // need to call free manually because some destructors need the applications access to the renderer (eg: image)
@@ -68,7 +68,6 @@ namespace AT {
         util::shutdown_qt();
     #endif
         LOG_SHUTDOWN
-        logger::shutdown();
     }
 
     
@@ -114,11 +113,12 @@ namespace AT {
             s_window->poll_events();
             start_fps_measurement();
         }
+        m_dashboard->finalize_init();
     
         // ---------------------------------------- main loop ----------------------------------------
         while (s_running) {
     
-            // PROFILE_SCOPE("run")
+            PROFILE_SCOPE("run")
             s_window->poll_events();				// update internal state
             m_dashboard->update(m_delta_time);
             m_renderer->draw_frame(m_delta_time);

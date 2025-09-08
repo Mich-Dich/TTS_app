@@ -65,7 +65,7 @@
 // Variadic and Debugging Utilities
 #include <cstdarg>
 #include <cassert>
-// #include <cstdlib>
+#include <cstdlib>
 
 #include <regex>
 
