@@ -39,7 +39,7 @@ namespace AT {
 
     enum class sidebar_status {
         menu = 0,
-        kokoro_settings,
+        settings,
         project_manager,
     };
 
@@ -79,6 +79,7 @@ namespace AT {
 
         void serialize_project(project& project_data, const std::filesystem::path path, const serializer::option option);
         void serialize(const serializer::option option);
+        void save_open_projects();
 
     #ifdef PLATFORM_LINUX
         pid_t                                                           m_audio_pid = 0;
@@ -104,6 +105,11 @@ namespace AT {
         PyThreadState*                                                  m_python_thread_state = nullptr;
         PyObject*                                                       m_py_module = nullptr;
         PyObject*                                                       m_py_generate_tts_function = nullptr;
+
+        bool                                                            m_auto_save = true;
+        system_time                                                     m_last_save_time;
+        u32                                                             m_save_interval_sec = 300;
+        bool                                                            m_control_key_pressed = false;
         const char*                                                     m_voice = "am_onyx";
         f32                                                             m_voice_speed = 1.2;
         std::string                                                     m_generation_status{};                          // Status messages

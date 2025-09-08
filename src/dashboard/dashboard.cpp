@@ -31,7 +31,6 @@ namespace AT {
     #pragma comment(lib, "winmm.lib")
 #endif
 
-
     dashboard::dashboard()
         : m_is_generating(false) {
 
@@ -89,6 +88,7 @@ namespace AT {
         
         std::filesystem::create_directories(util::get_executable_path() / "audio");
         serialize(serializer::option::load_from_file);
+        m_last_save_time = util::get_system_time();
         return true;
     }
 
@@ -154,10 +154,44 @@ namespace AT {
     }
 
 
-    void dashboard::update(f32 delta_time)  { }
+    void dashboard::update(f32 delta_time)  {
+
+        if (m_last_save_time.is_older_than(util::get_system_time(), m_save_interval_sec)) {
+
+            LOG(Trace, "Auto saving")
+
+            save_open_projects();
+            m_last_save_time = util::get_system_time();
+        }
+    }
 
 
-    void dashboard::on_event(event& event)  { }
+    void dashboard::on_event(event& event)  {
+        
+        //  ignore if no proj open      is keyboard event
+        if (!m_open_projects.empty() && event.get_category_flag() & EC_Keyboard) {
+
+            auto& key_event = static_cast<AT::key_event&>(event);
+            
+            // Check for Control key press/release
+            if (key_event.get_keycode() == key_code::key_left_control || 
+                key_event.get_keycode() == key_code::key_right_control) {
+                
+                if (key_event.m_key_state == key_state::press)
+                    m_control_key_pressed = true;
+                else if (key_event.m_key_state == key_state::release)
+                    m_control_key_pressed = false;
+            }
+
+            // Check for S key with Control pressed
+            if (key_event.get_keycode() == key_code::key_S && key_event.m_key_state == key_state::press && m_control_key_pressed) {
+                
+                LOG(Info, "Ctrl+S pressed - saving project")
+                save_open_projects();
+                event.handled = true;
+            }
+        }
+    }
 
     // --------------------------------------------------------------------------------------------------------------
     // UI
@@ -284,54 +318,97 @@ namespace AT {
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
                 
 		        UI::shift_cursor_pos(0, 10);
-                draw_sidebar_button("##kokoro_settings", sidebar_status::kokoro_settings, m_settings_icon);
+                draw_sidebar_button("##settings", sidebar_status::settings, m_settings_icon);
 		        
                 UI::shift_cursor_pos(0, 10);
                 draw_sidebar_button("##project_manager", sidebar_status::project_manager, m_library_icon);
                 
             } break;
 
-            case sidebar_status::kokoro_settings: {
-
-                const f32 sidebar_width = math::min(200.0f, content_size.x * 0.3f);
+            case sidebar_status::settings: {
+                const f32 sidebar_width = math::min(300.0f, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
-                SECTION_HEADER(m_settings_icon, "Kokoro settings");
-
-                UI::begin_table("kokoro_settings", false);
+                
+                // Header section
+                SECTION_HEADER(m_settings_icon, "Kokoro Settings");
+                
+                // Voice Settings section
+                UI::shift_cursor_pos(0.f, 10.f);
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "VOICE SETTINGS");
+                ImGui::Separator();
+                
+                UI::begin_table("voice_settings", false);
                 UI::table_row_slider("Voice Speed", m_voice_speed, .5f, 2.f, .05f);
-                UI::table_row([]() { ImGui::Text("Voice Type"); },
-                    [&]() {
-                        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-                        if (ImGui::BeginCombo("##Voice Type", m_voice, ImGuiComboFlags_HeightLarge)) {
-                        #define SELECTABLE(voice)       if (ImGui::Selectable(voice)) m_voice = voice;
-                            SELECTABLE("af_alloy")      SELECTABLE("af_aoede")      SELECTABLE("af_bella")
-                            SELECTABLE("af_heart")      SELECTABLE("af_jessica")    SELECTABLE("af_kore")
-                            SELECTABLE("af_nicole")     SELECTABLE("af_nova")       SELECTABLE("af_river")
-                            SELECTABLE("af_sarah")      SELECTABLE("af_sky")        SELECTABLE("am_adam")
-                            SELECTABLE("am_echo")       SELECTABLE("am_eric")       SELECTABLE("am_fenrir")
-                            SELECTABLE("am_liam")       SELECTABLE("am_michael")    SELECTABLE("am_onyx")
-                            SELECTABLE("am_puck")       SELECTABLE("am_santa")      SELECTABLE("bf_alice")
-                            SELECTABLE("bf_emma")       SELECTABLE("bf_isabella")   SELECTABLE("bf_lily")
-                            SELECTABLE("bm_daniel")     SELECTABLE("bm_fable")      SELECTABLE("bm_george")
-                            SELECTABLE("bm_lewis")      SELECTABLE("ef_dora")       SELECTABLE("em_alex")
-                            SELECTABLE("em_santa")      SELECTABLE("ff_siwis")      SELECTABLE("hf_alpha")
-                            SELECTABLE("hf_beta")       SELECTABLE("hm_omega")      SELECTABLE("hm_psi")
-                            SELECTABLE("if_sara")       SELECTABLE("im_nicola")     SELECTABLE("jf_alpha")
-                            SELECTABLE("jf_gongitsune") SELECTABLE("jf_nezumi")     SELECTABLE("jf_tebukuro")
-                            SELECTABLE("jm_kumo")       SELECTABLE("pf_dora")       SELECTABLE("pm_alex")
-                            SELECTABLE("pm_santa")      SELECTABLE("zf_xiaobei")    SELECTABLE("zf_xiaoni")
-                            SELECTABLE("zf_xiaoxiao")   SELECTABLE("zf_xiaoyi")     SELECTABLE("zm_yunjian")
-                            SELECTABLE("zm_yunxia")     SELECTABLE("zm_yunxi")      SELECTABLE("zm_yunyang")
+                UI::table_row([]() { 
+                    ImGui::Text("Voice Type"); 
+                    UI::help_marker("Select the voice model for text-to-speech generation");
+                }, [&]() {
+                    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                    if (ImGui::BeginCombo("##Voice Type", m_voice, ImGuiComboFlags_HeightLarge)) {
+                        // Group voices by type for better organization
+                        ImGui::TextDisabled("Female Voices");
+                        ImGui::Separator();
+                        #define SELECTABLE(voice) if (ImGui::Selectable(voice)) m_voice = voice;
+                        SELECTABLE("af_alloy") SELECTABLE("af_aoede") SELECTABLE("af_bella")
+                        SELECTABLE("af_heart") SELECTABLE("af_jessica") SELECTABLE("af_kore")
+                        SELECTABLE("af_nicole") SELECTABLE("af_nova") SELECTABLE("af_river")
+                        SELECTABLE("af_sarah") SELECTABLE("af_sky")
+                        
+                        ImGui::Spacing();
+                        ImGui::TextDisabled("Male Voices");
+                        ImGui::Separator();
+                        SELECTABLE("am_adam") SELECTABLE("am_echo") SELECTABLE("am_eric")
+                        SELECTABLE("am_fenrir") SELECTABLE("am_liam") SELECTABLE("am_michael")
+                        SELECTABLE("am_onyx") SELECTABLE("am_puck") SELECTABLE("am_santa")
+                        
+                        ImGui::Spacing();
+                        ImGui::TextDisabled("Other Voices");
+                        ImGui::Separator();
+                        SELECTABLE("bf_alice") SELECTABLE("bf_emma") SELECTABLE("bf_isabella")
+                        SELECTABLE("bf_lily") SELECTABLE("bm_daniel") SELECTABLE("bm_fable")
+                        SELECTABLE("bm_george") SELECTABLE("bm_lewis") SELECTABLE("ef_dora")
+                        SELECTABLE("em_alex") SELECTABLE("em_santa") SELECTABLE("ff_siwis")
+                        SELECTABLE("hf_alpha") SELECTABLE("hf_beta") SELECTABLE("hm_omega")
+                        SELECTABLE("hm_psi") SELECTABLE("if_sara") SELECTABLE("im_nicola")
+                        SELECTABLE("jf_alpha") SELECTABLE("jf_gongitsune") SELECTABLE("jf_nezumi")
+                        SELECTABLE("jf_tebukuro") SELECTABLE("jm_kumo") SELECTABLE("pf_dora")
+                        SELECTABLE("pm_alex") SELECTABLE("pm_santa") SELECTABLE("zf_xiaobei")
+                        SELECTABLE("zf_xiaoni") SELECTABLE("zf_xiaoxiao") SELECTABLE("zf_xiaoyi")
+                        SELECTABLE("zm_yunjian") SELECTABLE("zm_yunxia") SELECTABLE("zm_yunxi")
+                        SELECTABLE("zm_yunyang")
                         #undef SELECTABLE
-                            ImGui::EndCombo();
-                        }
+                        ImGui::EndCombo();
                     }
-                );
+                });
                 UI::end_table();
 
+                UI::shift_cursor_pos(0.f, 20.f);
+                
+                // Auto Save section
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "AUTO SAVE");
                 ImGui::Separator();
-                if (ImGui::Button("Back"))
-            	    m_sidebar_status = sidebar_status::menu;
+                
+                UI::begin_table("save_settings", false);
+                UI::table_row("Auto Save", m_auto_save);
+                if (!m_auto_save) ImGui::BeginDisabled();
+                UI::table_row_slider<u32>("Interval (seconds)", m_save_interval_sec, 10, 600, 10);
+                if (!m_auto_save) ImGui::EndDisabled();
+                UI::end_table();
+                
+                // // Add a test button to hear voice settings
+                // UI::shift_cursor_pos(0.f, 20.f);
+                // if (ImGui::Button("Test Voice", ImVec2(-1, 0))) {
+                //     // Add code to test the current voice settings
+                //     LOG(Info, "Testing voice with settings: " << m_voice << " at speed " << m_voice_speed);
+                // }
+                
+                UI::shift_cursor_pos(0.f, 20.f);
+                ImGui::Separator();
+                UI::shift_cursor_pos(0.f, 10.f);
+                
+                // Back button
+                if (ImGui::Button("Back", ImVec2(-1, 0)))
+                    m_sidebar_status = sidebar_status::menu;
                 
             } break;
             
@@ -1001,7 +1078,30 @@ namespace AT {
     void dashboard::serialize(const serializer::option option) {
 
         serializer::yaml(util::get_executable_path() / "config" / "project_data.yml", "project_data", option)
+            .entry(KEY_VALUE(m_current_project))
+            .entry(KEY_VALUE(m_auto_save))
+            .entry(KEY_VALUE(m_save_interval_sec))
             .unordered_map(KEY_VALUE(m_project_paths));
+    }
+
+    
+    void dashboard::save_open_projects() {
+        
+        serialize(serializer::option::save_to_file);
+        u32 save_counter = 0;
+        for (auto& proj : m_open_projects) {
+
+            std::filesystem::path project_path{};
+            if (proj.saved || !m_project_paths.contains(proj.name))        // Save projects that need it and have a path registered
+                continue;
+
+            project_path = m_project_paths.at(proj.name);
+            LOG(Trace, "saving project [" << proj.name << "] to [" << project_path.generic_string() << "]")
+            serialize_project(proj, project_path, serializer::option::save_to_file);
+            save_counter++;
+        }
+
+        LOG(Trace, "saved [" << save_counter << "] projects")
     }
 
 }
