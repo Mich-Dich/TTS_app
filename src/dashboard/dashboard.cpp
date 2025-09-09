@@ -169,6 +169,13 @@ namespace AT {
 
     void dashboard::update(f32 delta_time)  {
 
+        if (m_should_resize_font) {
+
+            application::get().get_imgui_config_ref()->resize_fonts(m_font_size);
+            m_should_resize_font = false;
+        }
+
+
         if (m_last_save_time.is_older_than(util::get_system_time(), m_save_interval_sec)) {
 
             LOG(Trace, "Auto saving")
@@ -296,10 +303,20 @@ namespace AT {
         const ImVec2 content_size = ImGui::GetContentRegionAvail();
         const float icon_size = 30.0f;
 
-    #define SECTION_HEADER(button, section_title)                UI::shift_cursor_pos(0.f, 5.f);                                                \
-                ImGui::Image(button->get(), ImVec2(icon_size, icon_size), ImVec2(0, 0), ImVec2(1, 1));                                          \
-                ImGui::SameLine(); UI::shift_cursor_pos(10.f, 5.f); UI::big_text(section_title); UI::shift_cursor_pos(0.f, 20.f);
-        
+    #define SECTION_HEADER(button, section_title)                UI::shift_cursor_pos(0.f, 5.f);                                \
+            ImGui::Image(button->get(), ImVec2(icon_size, icon_size), ImVec2(0, 0), ImVec2(1, 1));                              \
+            ImGui::SameLine(); UI::shift_cursor_pos(10.f, 5.f); UI::big_text(section_title); UI::shift_cursor_pos(0.f, 20.f);
+
+        auto draw_title = [](const char* text, const bool shift_cursor = true) {
+
+            if (shift_cursor)
+                UI::shift_cursor_pos(0.f, 20.f);
+            ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("bold"));
+            ImGui::TextColored( AT::UI::get_main_color_ref(), text);
+            ImGui::PopFont();
+            ImGui::Separator();
+        };
+                
         switch (m_sidebar_status) {
 
             case sidebar_status::menu: {
@@ -348,15 +365,6 @@ namespace AT {
                 // Header section
                 SECTION_HEADER(m_settings_icon, "Kokoro Settings");
                 
-                auto draw_title = [](const char* text) {
-
-                    UI::shift_cursor_pos(0.f, 20.f);
-                    ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("bold"));
-                    ImGui::TextColored( AT::UI::get_main_color_ref(), text);
-                    ImGui::PopFont();
-                    ImGui::Separator();
-                };
-
                 // Voice Settings section
                 draw_title("VOICE SETTINGS");
                 
@@ -421,14 +429,14 @@ namespace AT {
                 draw_title("DISPLAY");                
                 UI::begin_table("settings", false);
                 UI::table_row_slider<u16>("Font Size", m_font_size, 10, 50, 1);
-                // if (m_font_size == AT::UI::g_font_size)
-                //     ImGui::BeginDisabled();
-                // UI::table_row([]() { ImGui::Text("Apply new font size"); }, [this]() {
-                //         if (ImGui::Button("Apply"))
-                //             application::get().get_imgui_config_ref()->resize_fonts(m_font_size);
-                //     });
-                // if (m_font_size == AT::UI::g_font_size)
-                //     ImGui::EndDisabled();
+                if (m_font_size == AT::UI::g_font_size)
+                    ImGui::BeginDisabled();
+                UI::table_row([]() { ImGui::Text("Apply new font size"); }, [this]() {
+                        if (ImGui::Button("Apply"))
+                            m_should_resize_font = true;
+                    });
+                if (m_font_size == AT::UI::g_font_size)
+                    ImGui::EndDisabled();
                 UI::end_table();
 
                 UI::shift_cursor_pos(0.f, 20.f);
@@ -447,10 +455,7 @@ namespace AT {
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
                 SECTION_HEADER(m_library_icon, "Project Management");
                 
-                // Project list section
-                UI::shift_cursor_pos(0.f, 10.f);
-                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "RECENT PROJECTS");
-                ImGui::Separator();
+                draw_title("RECENT PROJECTS", false);
 
                 static f32 project_description_height = 0.f;
                 const f32 project_list_height = content_size.y - project_description_height - 
@@ -593,15 +598,12 @@ namespace AT {
                     LOG(Trace, "Saving Project [" << m_current_project << "] to [" << proj_path << "]")
                 }
                 
-                UI::shift_cursor_pos(0.f, 20.f);
-                ImGui::Separator();
-                UI::shift_cursor_pos(0.f, 10.f);
-                
                 // Current project info (if any project is open)
                 if (!m_open_projects.empty()) {
                     for (auto& proj : m_open_projects) {
                         if (m_current_project == proj.name) {
-                            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "CURRENT PROJECT");
+                            
+                            draw_title("CURRENT PROJECT");
                             
                             // Project name editing
                             static bool is_editing = false;
@@ -650,9 +652,6 @@ namespace AT {
                 }
                 
                 UI::shift_cursor_pos(0.f, 20.f);
-
-                if (!m_open_projects.empty())
-                    ImGui::Separator();
 
                 if (ImGui::Button("Back", ImVec2(-1, 0)))
                     m_sidebar_status = sidebar_status::menu;

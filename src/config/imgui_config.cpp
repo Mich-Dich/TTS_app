@@ -2,6 +2,7 @@
 #include "util/pch.h"
 
 #include <imgui.h>
+#include <imgui_internal.h>
 #include <implot.h>
 
 #include "util/system.h"
@@ -54,12 +55,18 @@ namespace AT::UI {
 
 	void imgui_config::load_fonts() {
 
+		ImGui::SetCurrentContext(m_context_imgui);
+		ImPlot::SetCurrentContext(m_context_implot);
+
+		auto& io = ImGui::GetIO();
+		application::get().get_renderer()->imgui_destroy_fonts();
+		io.Fonts->Clear();			// Clear the font atlas before adding new fonts
+		m_fonts.clear();
+
 		std::filesystem::path base_path = AT::util::get_executable_path() / "assets" / "fonts";
 		std::filesystem::path font_path = base_path / "Open_Sans" / "static";
 		std::filesystem::path Inconsolata_path = base_path / "Inconsolata" / "static";
 
-		auto io = ImGui::GetIO();
-					
 		io.FontAllowUserScaling = true;
 		m_fonts["regular"] =		io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Regular.ttf").string().c_str(), g_font_size);
 		m_fonts["bold"] =			io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Bold.ttf").string().c_str(), g_font_size);
@@ -84,7 +91,7 @@ namespace AT::UI {
 		application::get().get_renderer()->imgui_create_fonts();
 	}
 
-	// auto calculate the size of other fonts
+
 	void imgui_config::resize_fonts(const f32 font_size) {
 
 		g_font_size = font_size;
@@ -93,8 +100,6 @@ namespace AT::UI {
 		g_font_size_header_1 = font_size * 	1.5333333333f;
 		g_font_size_header_2 = font_size * 	1.8f;
 
-		application::get().get_renderer()->imgui_destroy_fonts();
-		m_fonts.clear();
 		load_fonts();
 	}
 
@@ -106,16 +111,12 @@ namespace AT::UI {
 		g_font_size_header_1 = font_size_header_1;
 		g_font_size_header_2 = font_size_header_2;
 
-		application::get().get_renderer()->imgui_destroy_fonts();
-		m_fonts.clear();
 		load_fonts();
 	}
 
 
 	imgui_config::imgui_config() { 
-		
-		LOG_INIT 
-		
+			
 		IMGUI_CHECKVERSION();
 		m_context_imgui = ImGui::CreateContext();
 		m_context_implot = ImPlot::CreateContext();
@@ -136,20 +137,20 @@ namespace AT::UI {
 		action_color_00_active = LERP_MAIN_COLOR_DARK(1.f);
 	
 		load_fonts();
-
 		update_UI_theme();
+
+		LOG_INIT 
 	}
 
 
 	imgui_config::~imgui_config() { 
-
-		LOG_SHUTDOWN
 				
 		application::get().get_renderer()->imgui_shutdown();
 		ImGui::DestroyContext(m_context_imgui);
 		ImPlot::DestroyContext(m_context_implot);
 
 		serialize(serializer::option::save_to_file);
+		LOG_SHUTDOWN
 	}
 
 

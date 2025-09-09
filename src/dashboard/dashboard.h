@@ -107,6 +107,7 @@ namespace AT {
         PyObject*                                                       m_py_module = nullptr;
         PyObject*                                                       m_py_generate_tts_function = nullptr;
 
+        bool                                                            m_should_resize_font = false;
         bool                                                            m_auto_save = true;
         system_time                                                     m_last_save_time;
         u32                                                             m_save_interval_sec = 300;
