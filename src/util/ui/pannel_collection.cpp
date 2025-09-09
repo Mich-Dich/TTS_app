@@ -1221,7 +1221,14 @@ namespace AT::UI {
 
 		ImGui::TableSetColumnIndex(1);
 
-		ImGui::Checkbox(label.data(), &value);
+		// Copy non-space characters from label to loc_label
+		std::string loc_label = "##";
+		loc_label.reserve(label.size() + 2);
+		std::remove_copy_if(label.begin(), label.end(), std::back_inserter(loc_label), [](char c) {
+			return std::isspace(static_cast<unsigned char>(c));
+		});
+
+		ImGui::Checkbox(loc_label.c_str(), &value);
 		//ImGui::Text("%s", value.data());
 	}
 

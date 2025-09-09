@@ -19,7 +19,7 @@
 #define UI_ACTIVE_THEME						AT::UI::THEME::current_theme
 
 #define LERP_GRAY_A(value, alpha)			{value, value, value, alpha }
-//#define COLOR_INT_CONVERTION(color)		IM_COL32(255 * color.x, 255 * color.y, 255 * color.z, 255 * color.w)
+//#define COLOR_INT_CONVERSION(color)		IM_COL32(255 * color.x, 255 * color.y, 255 * color.z, 255 * color.w)
 #define LERP_MAIN_COLOR_DARK(value)			{main_color.x * value, main_color.y * value, main_color.z * value, 1.f }		// Set [w] to be [1.f] to disable accidental transparency
 #define LERP_MAIN_COLOR_LIGHT(value)		{	(1.f - value) * 1.f + value * main_color.x, \
 												(1.f - value) * 1.f + value * main_color.y, \
@@ -27,6 +27,7 @@
 												1.f }																		// Set [w] to be [1.f] to disable accidental transparency
 
 namespace AT::UI {
+
 
 	GETTER_REF_FUNC_IMPL(ImVec4, main_color);
 	GETTER_REF_FUNC_IMPL(ImVec4, main_titlebar_color);
@@ -48,19 +49,67 @@ namespace AT::UI {
 		return ImVec4{ vec_0.x * vec_1.x, vec_0.y * vec_1.y, vec_0.z * vec_1.z, vec_0.w * vec_1.w };
 	}
 
-	void set_UI_theme_selection(theme_selection theme_selection) { UI_theme = theme_selection; }
+	void set_UI_theme_selection(theme_selection theme_selection) { g_UI_theme = theme_selection; }
 
-	//void save_UI_theme_data() {
 
-	//	serialize(serializer::option::save_to_file);
-	//	update_UI_theme();
-	//}
+	void imgui_config::load_fonts() {
 
-	//void load_UI_data() {
+		std::filesystem::path base_path = AT::util::get_executable_path() / "assets" / "fonts";
+		std::filesystem::path font_path = base_path / "Open_Sans" / "static";
+		std::filesystem::path Inconsolata_path = base_path / "Inconsolata" / "static";
 
-	//	serialize(serializer::option::load_from_file);
-	//	update_UI_theme();
-	//}
+		auto io = ImGui::GetIO();
+					
+		io.FontAllowUserScaling = true;
+		m_fonts["regular"] =		io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Regular.ttf").string().c_str(), g_font_size);
+		m_fonts["bold"] =			io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Bold.ttf").string().c_str(), g_font_size);
+		m_fonts["italic"] =			io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Italic.ttf").string().c_str(), g_font_size);
+
+		m_fonts["regular_big"] =	io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), g_big_font_size);
+		m_fonts["bold_big"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Bold.ttf").string().c_str(), g_big_font_size);
+		m_fonts["italic_big"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Italic.ttf").string().c_str(), g_big_font_size);
+
+		m_fonts["header_0"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), g_font_size_header_2);
+		m_fonts["header_1"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), g_font_size_header_1);
+		m_fonts["header_2"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), g_font_size_header_0);
+
+		m_fonts["giant"] =			io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Bold.ttf").string().c_str(), 60.f);
+
+		//Inconsolata-Regular
+		m_fonts["monospace_regular"] = io.Fonts->AddFontFromFileTTF((Inconsolata_path / "Inconsolata-Regular.ttf").string().c_str(), g_font_size * 0.92f);
+		m_fonts["monospace_regular_big"] = io.Fonts->AddFontFromFileTTF((Inconsolata_path / "Inconsolata-Regular.ttf").string().c_str(), g_big_font_size * 1.92f);
+
+		io.FontDefault = m_fonts["regular"];
+
+		application::get().get_renderer()->imgui_create_fonts();
+	}
+
+	// auto calculate the size of other fonts
+	void imgui_config::resize_fonts(const f32 font_size) {
+
+		g_font_size = font_size;
+		g_big_font_size = font_size * 1.2f;
+		g_font_size_header_0 = font_size * 	1.2666666666f;
+		g_font_size_header_1 = font_size * 	1.5333333333f;
+		g_font_size_header_2 = font_size * 	1.8f;
+
+		application::get().get_renderer()->imgui_destroy_fonts();
+		m_fonts.clear();
+		load_fonts();
+	}
+
+	void imgui_config::resize_fonts(const f32 font_size, const f32 big_font_size, const f32 font_size_header_0, const f32 font_size_header_1, const f32 font_size_header_2) {
+
+		g_font_size = font_size;
+		g_big_font_size = big_font_size;
+		g_font_size_header_0 = font_size_header_0;
+		g_font_size_header_1 = font_size_header_1;
+		g_font_size_header_2 = font_size_header_2;
+
+		application::get().get_renderer()->imgui_destroy_fonts();
+		m_fonts.clear();
+		load_fonts();
+	}
 
 
 	imgui_config::imgui_config() { 
@@ -74,9 +123,8 @@ namespace AT::UI {
 		
 
 		main_color = { .0f,	.4088f,	1.0f,	1.f };
-		window_border = false;
-		highlited_window_bg = LERP_GRAY(0.57f);
-		default_item_width = 200.f;
+		g_window_border = false;
+		g_highlighted_window_bg = LERP_GRAY(0.57f);
 
 		serialize(serializer::option::load_from_file);
 
@@ -87,36 +135,7 @@ namespace AT::UI {
 		action_color_00_hover = LERP_MAIN_COLOR_DARK(0.85f);
 		action_color_00_active = LERP_MAIN_COLOR_DARK(1.f);
 	
-		{	// Load fonts
-			std::filesystem::path base_path = AT::util::get_executable_path() / "assets" / "fonts";
-			std::filesystem::path font_path = base_path / "Open_Sans" / "static";
-			std::filesystem::path Inconsolata_path = base_path / "Inconsolata" / "static";
-
-			auto io = ImGui::GetIO();
-						
-			io.FontAllowUserScaling = true;
-			m_fonts["regular"] =		io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Regular.ttf").string().c_str(), m_font_size);
-			m_fonts["bold"] =			io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Bold.ttf").string().c_str(), m_font_size);
-			m_fonts["italic"] =			io.Fonts->AddFontFromFileTTF((font_path/ "OpenSans-Italic.ttf").string().c_str(), m_font_size);
-
-			m_fonts["regular_big"] =	io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), m_big_font_size);
-			m_fonts["bold_big"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Bold.ttf").string().c_str(), m_big_font_size);
-			m_fonts["italic_big"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Italic.ttf").string().c_str(), m_big_font_size);
-
-			m_fonts["header_0"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), m_font_size_header_2);
-			m_fonts["header_1"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), m_font_size_header_1);
-			m_fonts["header_2"] =		io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Regular.ttf").string().c_str(), m_font_size_header_0);
-
-			m_fonts["giant"] =			io.Fonts->AddFontFromFileTTF((font_path / "OpenSans-Bold.ttf").string().c_str(), 60.f);
-
-			//Inconsolata-Regular
-			m_fonts["monospace_regular"] = io.Fonts->AddFontFromFileTTF((Inconsolata_path / "Inconsolata-Regular.ttf").string().c_str(), m_font_size * 0.92f);
-			m_fonts["monospace_regular_big"] = io.Fonts->AddFontFromFileTTF((Inconsolata_path / "Inconsolata-Regular.ttf").string().c_str(), m_big_font_size * 1.92f);
-
-			io.FontDefault = m_fonts["regular"];
-
-			application::get().get_renderer()->imgui_create_fonts();
-		}
+		load_fonts();
 
 		update_UI_theme();
 	}
@@ -146,16 +165,15 @@ namespace AT::UI {
 
 	void imgui_config::serialize(serializer::option option) {
 
-		AT::serializer::yaml(config::get_filepath_from_configtype(util::get_executable_path(), config::file::ui), "theme", option)			// load general aperance settings
-			.entry(KEY_VALUE(m_font_size))
-			.entry(KEY_VALUE(m_font_size_header_0))
-			.entry(KEY_VALUE(m_font_size_header_1))
-			.entry(KEY_VALUE(m_font_size_header_2))
-			.entry(KEY_VALUE(m_big_font_size))
-			.entry(KEY_VALUE(UI_theme))
-			.entry(KEY_VALUE(window_border))
-			.entry(KEY_VALUE(highlited_window_bg))
-			.entry(KEY_VALUE(default_item_width))
+		AT::serializer::yaml(config::get_filepath_from_configtype(util::get_executable_path(), config::file::ui), "theme", option)			// load general appearance settings
+			.entry(KEY_VALUE(g_font_size))
+			.entry(KEY_VALUE(g_font_size_header_0))
+			.entry(KEY_VALUE(g_font_size_header_1))
+			.entry(KEY_VALUE(g_font_size_header_2))
+			.entry(KEY_VALUE(g_big_font_size))
+			.entry(KEY_VALUE(g_UI_theme))
+			.entry(KEY_VALUE(g_window_border))
+			.entry(KEY_VALUE(g_highlighted_window_bg))
 
 			// color
 			.entry(KEY_VALUE(main_color))
@@ -179,7 +197,7 @@ namespace AT::UI {
 
 	void enable_window_border(bool enable) {
 
-		window_border = enable;
+		g_window_border = enable;
 		//serialize(serializer::option::save_to_file);
 
 		ImGuiStyle* style = &ImGui::GetStyle();
@@ -272,7 +290,7 @@ namespace AT::UI {
 		float       CircleTessellationMaxError; // Maximum error (in pixels) allowed when using AddCircle()/AddCircleFilled() or drawing rounded corner rectangles with no explicit segment count specified. Decrease for higher quality but more geometry.
 		*/
 		
-		switch (UI_theme) {
+		switch (g_UI_theme) {
 
 			case AT::UI::theme_selection::dark: {
 
@@ -286,7 +304,7 @@ namespace AT::UI {
 				action_color_gray_hover = LERP_GRAY(0.2f);
 				action_color_gray_active = LERP_GRAY(0.25f);
 
-				highlited_window_bg = LERP_GRAY(0.57f);
+				g_highlighted_window_bg = LERP_GRAY(0.57f);
 				main_titlebar_color = LERP_MAIN_COLOR_DARK(.5f);
 
 				colors[ImGuiCol_Text]					= IMCOLOR_GRAY(255);
@@ -357,7 +375,7 @@ namespace AT::UI {
 				action_color_gray_hover = LERP_GRAY(0.27f);
 				action_color_gray_active = LERP_GRAY(0.35f);
 
-				highlited_window_bg = LERP_GRAY(0.8f);
+				g_highlighted_window_bg = LERP_GRAY(0.8f);
 				main_titlebar_color = LERP_MAIN_COLOR_LIGHT(.5f);
 
 				colors[ImGuiCol_Text]					= LERP_GRAY(1.0f);
@@ -406,7 +424,7 @@ namespace AT::UI {
 				colors[ImGuiCol_PlotHistogramHovered]	= action_color_00_active;
 				colors[ImGuiCol_TableHeaderBg]			= ImVec4(0.19f, 0.19f, 0.20f, 1.00f);
 				colors[ImGuiCol_TableBorderStrong]		= ImVec4(0.31f, 0.31f, 0.35f, 1.00f);	// Prefer using Alpha=1.0 here
-				colors[ImGuiCol_TableBorderLight]		= ImVec4(0.23f, 0.23f, 0.25f, 1.00f);		// Prefer using Alpha=1.0 here
+				colors[ImGuiCol_TableBorderLight]		= ImVec4(0.23f, 0.23f, 0.25f, 1.00f);	// Prefer using Alpha=1.0 here
 				colors[ImGuiCol_TableRowBg]				= ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 				colors[ImGuiCol_TableRowBgAlt]			= ImVec4(1.00f, 1.00f, 1.00f, 0.06f);
 				colors[ImGuiCol_TextSelectedBg]			= LERP_MAIN_COLOR_LIGHT(.4f);

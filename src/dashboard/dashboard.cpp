@@ -14,12 +14,12 @@
 #include "events/application_event.h"
 #include "events/mouse_event.h"
 #include "events/key_event.h"
-#include "application.h"
-#include "config/imgui_config.h"
 #include "util/ui/pannel_collection.h"
 #include "util/io/serializer_data.h"
 #include "util/io/serializer_yaml.h"
 #include "util/system.h"
+#include "config/imgui_config.h"
+#include "application.h"
 
 #include "dashboard.h"
 
@@ -89,6 +89,16 @@ namespace AT {
         std::filesystem::create_directories(util::get_executable_path() / "audio");
         serialize(serializer::option::load_from_file);
         m_last_save_time = util::get_system_time();
+        m_font_size = AT::UI::g_font_size;
+
+        if (m_auto_open_last && !m_current_project.empty() && m_project_paths.contains(m_current_project)) {
+
+            const auto project_to_load = m_project_paths.at(m_current_project);
+            load_project(m_current_project, project_to_load);
+            m_sidebar_status = sidebar_status::menu;
+        } else
+            m_sidebar_status = sidebar_status::project_manager;
+
         return true;
     }
 
@@ -101,7 +111,10 @@ namespace AT {
     // shutdown will be called before any system is deinitialize
     bool dashboard::shutdown() {
 
+        // save all relevant data
         serialize(serializer::option::save_to_file);
+        AT::UI::g_font_size = m_font_size;
+        application::get().get_imgui_config_ref()->serialize(serializer::option::save_to_file);
 
         // Acquire GIL if Python is initialized
         if (Py_IsInitialized())
@@ -216,7 +229,9 @@ namespace AT {
             for (auto& proj : m_open_projects) {
                 if (ImGui::BeginTabItem(proj.name.c_str(), nullptr, proj.saved ? ImGuiTabItemFlags_None : ImGuiTabItemFlags_UnsavedDocument)) {                       // Create a tab for each project
 
+                    ImGui::BeginChild("current_project", ImVec2(0, 0), true);
                     draw_project(proj);
+                    ImGui::EndChild();
                     ImGui::EndTabItem();
 
                     if (m_current_project != proj.name)
@@ -326,18 +341,26 @@ namespace AT {
             } break;
 
             case sidebar_status::settings: {
-                const f32 sidebar_width = math::min(300.0f, content_size.x * 0.3f);
+
+                const f32 sidebar_width = math::min(230.f + (AT::UI::g_font_size-10) * 10, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
                 
                 // Header section
                 SECTION_HEADER(m_settings_icon, "Kokoro Settings");
                 
+                auto draw_title = [](const char* text) {
+
+                    UI::shift_cursor_pos(0.f, 20.f);
+                    ImGui::PushFont(application::get().get_imgui_config_ref()->get_font("bold"));
+                    ImGui::TextColored( AT::UI::get_main_color_ref(), text);
+                    ImGui::PopFont();
+                    ImGui::Separator();
+                };
+
                 // Voice Settings section
-                UI::shift_cursor_pos(0.f, 10.f);
-                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "VOICE SETTINGS");
-                ImGui::Separator();
+                draw_title("VOICE SETTINGS");
                 
-                UI::begin_table("voice_settings", false);
+                UI::begin_table("settings", false);
                 UI::table_row_slider("Voice Speed", m_voice_speed, .5f, 2.f, .05f);
                 UI::table_row([]() { 
                     ImGui::Text("Voice Type"); 
@@ -382,26 +405,32 @@ namespace AT {
                 });
                 UI::end_table();
 
-                UI::shift_cursor_pos(0.f, 20.f);
+                // UI::shift_cursor_pos(0.f, 20.f);
+                // ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "SAVE/LOAD");
+                // ImGui::Separator();
                 
-                // Auto Save section
-                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "AUTO SAVE");
-                ImGui::Separator();
-                
-                UI::begin_table("save_settings", false);
+                draw_title("SAVE/LOAD");
+                UI::begin_table("settings", false);
                 UI::table_row("Auto Save", m_auto_save);
                 if (!m_auto_save) ImGui::BeginDisabled();
                 UI::table_row_slider<u32>("Interval (seconds)", m_save_interval_sec, 10, 600, 10);
                 if (!m_auto_save) ImGui::EndDisabled();
+                UI::table_row("Auto Open Last", m_auto_open_last);
                 UI::end_table();
-                
-                // // Add a test button to hear voice settings
-                // UI::shift_cursor_pos(0.f, 20.f);
-                // if (ImGui::Button("Test Voice", ImVec2(-1, 0))) {
-                //     // Add code to test the current voice settings
-                //     LOG(Info, "Testing voice with settings: " << m_voice << " at speed " << m_voice_speed);
-                // }
-                
+
+                draw_title("DISPLAY");                
+                UI::begin_table("settings", false);
+                UI::table_row_slider<u16>("Font Size", m_font_size, 10, 50, 1);
+                // if (m_font_size == AT::UI::g_font_size)
+                //     ImGui::BeginDisabled();
+                // UI::table_row([]() { ImGui::Text("Apply new font size"); }, [this]() {
+                //         if (ImGui::Button("Apply"))
+                //             application::get().get_imgui_config_ref()->resize_fonts(m_font_size);
+                //     });
+                // if (m_font_size == AT::UI::g_font_size)
+                //     ImGui::EndDisabled();
+                UI::end_table();
+
                 UI::shift_cursor_pos(0.f, 20.f);
                 ImGui::Separator();
                 UI::shift_cursor_pos(0.f, 10.f);
@@ -413,7 +442,7 @@ namespace AT {
             } break;
             
             case sidebar_status::project_manager: {
-
+    
                 const f32 sidebar_width = math::min(300.0f, content_size.x * 0.3f);
                 ImGui::BeginChild("LeftPanel", ImVec2(sidebar_width, content_size.y), true);
                 SECTION_HEADER(m_library_icon, "Project Management");
@@ -422,7 +451,13 @@ namespace AT {
                 UI::shift_cursor_pos(0.f, 10.f);
                 ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "RECENT PROJECTS");
                 ImGui::Separator();
-                ImGui::BeginChild("project_list", ImVec2(0, content_size.y - (m_open_projects.empty() ? 200.f : 350.f)), true);               // Project list with scrollable area
+
+                static f32 project_description_height = 0.f;
+                const f32 project_list_height = content_size.y - project_description_height - 
+                    ImGui::GetCursorPosY() -            // Account for space used so far
+                    ImGui::GetStyle().WindowPadding.y;  // Account for bottom padding
+
+                ImGui::BeginChild("project_list", ImVec2(0, project_list_height), true);               // Project list with scrollable area
                 {
                     // Create a vector to store keys to remove (since we can't modify map while iterating)
                     static std::vector<std::string> keys_to_remove;
@@ -433,25 +468,17 @@ namespace AT {
                     for (const auto& [project_name, project_path] : m_project_paths) {
                         ImGui::PushID(i++);
 
-                        auto load_proj = [this, &project_name, &project_path]() {
-
-                            LOG(Trace, "open [" << project_name << "] from [" << project_path << "]")
-                            project loaded_project{};
-                            serialize_project(loaded_project, project_path, serializer::option::load_from_file);
-                            m_open_projects.push_back(loaded_project);
-                        };
-
                         const bool is_selected = (!m_open_projects.empty() && m_current_project == project_name);
                         if (ImGui::Selectable(project_name.c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                             if (ImGui::IsMouseDoubleClicked(0)) {
-                                load_proj();
+                                load_project(project_name, project_path);
                             }
                         }
 
                         // Context menu for project options
                         if (ImGui::BeginPopupContextItem()) {
                             if (ImGui::MenuItem("Open"))
-                                load_proj();
+                                load_project(project_name, project_path);
 
                             if (ImGui::MenuItem("Remove from list"))
                                 keys_to_remove.push_back(project_name);
@@ -473,6 +500,7 @@ namespace AT {
                 
                 const f32 bu_width = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) / 2.f;
 
+                const f32 project_description_start = ImGui::GetCursorPosY();
                 // Action buttons
                 UI::shift_cursor_pos(0.f, 20.f);
                 if (ImGui::Button("New Project", ImVec2(bu_width, 0))) {
@@ -629,6 +657,8 @@ namespace AT {
                 if (ImGui::Button("Back", ImVec2(-1, 0)))
                     m_sidebar_status = sidebar_status::menu;
 
+                project_description_height = ImGui::GetCursorPosY() - project_description_start;
+
             } break;
 
             default: break;
@@ -644,8 +674,12 @@ namespace AT {
 
     void dashboard::draw_project(project& project_data) {
 
-            for( auto& sec : project_data.sections)
-                draw_section(project_data, sec);
+            for( auto& sec : project_data.sections) {
+                if (ImGui::CollapsingHeader(sec.title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                    
+                    draw_section(project_data, sec);
+                }
+            }
             
             if (ImGui::Button("Add section")) {                                                     // Add section button
                 
@@ -660,17 +694,16 @@ namespace AT {
         
         // Section styling
         ImGui::PushID(&section_data);
-        ImVec4 bg_color = ImGui::GetStyle().Colors[ImGuiCol_FrameBg];
+        const auto imgui_style = ImGui::GetStyle();
+        ImVec4 bg_color = imgui_style.Colors[ImGuiCol_FrameBg];
         bg_color.w *= 1.05f;                                                                        // Darker background
         ImGui::PushStyleColor(ImGuiCol_ChildBg, bg_color);
         
         const float width = ImGui::GetContentRegionAvail().x;
-        const f32 padding_x = ImGui::GetStyle().FramePadding.y * 2.0f;
-        const f32 button_size = 105.f;
-
-        ImGui::Separator();
-        // UI::big_text((section_data.title).c_str());
-
+        const f32 padding_x = imgui_style.FramePadding.y * 2.0f;
+        const ImVec2 icon_button_size = ImVec2(15 + (AT::UI::g_font_size / 10));
+        f32 button_size = (icon_button_size.x * 2) + (imgui_style.ItemSpacing.x * 4) + 20 + icon_button_size.x + 29; 
+        // Generate + Audio buttons
 
         constexpr size_t TITLE_SIZE = 512;
         static char title_buffer[TITLE_SIZE];
@@ -708,7 +741,7 @@ namespace AT {
 
                 
             ImGui::SameLine();
-            if (ImGui::ImageButton("##generate_button", m_generate_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
+            if (ImGui::ImageButton("##generate_button", m_generate_icon->get(), icon_button_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
                 
                 field.generating = true;
 
@@ -724,7 +757,7 @@ namespace AT {
             const bool has_audio = std::filesystem::exists(audio_path);
 
             if (!has_audio)      ImGui::BeginDisabled();
-            if (ImGui::ImageButton("##play_audio", (field.playing_audio) ? m_stop_icon->get() : m_audio_icon->get(), ImVec2(18, 18), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1)))
+            if (ImGui::ImageButton("##play_audio", (field.playing_audio) ? m_stop_icon->get() : m_audio_icon->get(), icon_button_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1)))
                 if (field.playing_audio)
                     stop_audio();
                 else
@@ -1081,6 +1114,7 @@ namespace AT {
             .entry(KEY_VALUE(m_current_project))
             .entry(KEY_VALUE(m_auto_save))
             .entry(KEY_VALUE(m_save_interval_sec))
+            .entry(KEY_VALUE(m_auto_open_last))
             .unordered_map(KEY_VALUE(m_project_paths));
     }
 
@@ -1102,6 +1136,15 @@ namespace AT {
         }
 
         LOG(Trace, "saved [" << save_counter << "] projects")
+    }
+
+
+    void dashboard::load_project(const std::string& project_name, const std::filesystem::path& project_path) {
+
+        LOG(Trace, "open [" << project_name << "] from [" << project_path << "]")
+        project loaded_project{};
+        serialize_project(loaded_project, project_path, serializer::option::load_from_file);
+        m_open_projects.push_back(loaded_project);
     }
 
 }

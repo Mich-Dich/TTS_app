@@ -424,12 +424,18 @@ namespace AT::UI {
 		if constexpr (std::is_same_v<T, int>)
 			return ImGui::SliderInt(loc_label.c_str(), &value, static_cast<int>(min_value), static_cast<int>(max_value), "%d", flags);
 		
+		if constexpr (std::is_same_v<T, u16>) {
+			u16 min_val = static_cast<u16>(min_value);
+			u16 max_val = static_cast<u16>(max_value);
+			return ImGui::SliderScalar(loc_label.c_str(), ImGuiDataType_U16, &value, &min_val, &max_val, "%u", flags);
+		}
+		
 		if constexpr (std::is_same_v<T, u32>) {
 			u32 min_val = static_cast<u32>(min_value);
 			u32 max_val = static_cast<u32>(max_value);
 			return ImGui::SliderScalar(loc_label.c_str(), ImGuiDataType_U32, &value, &min_val, &max_val, "%u", flags);
 		}
-		
+
 		if constexpr (std::is_same_v<T, u64>) {
 			u64 min_val = static_cast<u64>(min_value);
 			u64 max_val = static_cast<u64>(max_value);
@@ -449,7 +455,7 @@ namespace AT::UI {
 			return ImGui::SliderFloat4(loc_label.c_str(), &value[0], min_value, max_value, "%.2f", flags);
 
 		else
-			ImGui::Text("unsuported data type");
+			ImGui::Text("unsupported data type");
 
 		return false;
 	}

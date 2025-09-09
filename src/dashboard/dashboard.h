@@ -80,6 +80,7 @@ namespace AT {
         void serialize_project(project& project_data, const std::filesystem::path path, const serializer::option option);
         void serialize(const serializer::option option);
         void save_open_projects();
+        void load_project(const std::string& project_name, const std::filesystem::path& project_path);
 
     #ifdef PLATFORM_LINUX
         pid_t                                                           m_audio_pid = 0;
@@ -112,6 +113,9 @@ namespace AT {
         bool                                                            m_control_key_pressed = false;
         const char*                                                     m_voice = "am_onyx";
         f32                                                             m_voice_speed = 1.2;
+        bool                                                            m_auto_open_last = true;
+        u16                                                             m_font_size = 15;
+
         std::string                                                     m_generation_status{};                          // Status messages
         std::atomic<bool>                                               m_shutting_down = false;
 		ref<image>						                                m_generate_icon;

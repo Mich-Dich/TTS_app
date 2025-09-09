@@ -22,12 +22,15 @@ namespace AT::UI {
 		light
 	};
 
-	[[maybe_unused]] static std::filesystem::path ini_file_location = AT::config::get_filepath_from_configtype_ini(util::get_executable_path(), config::file::imgui).c_str();
-	[[maybe_unused]] static f32  m_font_size = 15.f, m_font_size_header_0 = 19.f, m_font_size_header_1 = 23.f, m_font_size_header_2 = 27.f, m_big_font_size = 18.f;
-	[[maybe_unused]] static theme_selection UI_theme = theme_selection::dark;
-	[[maybe_unused]] static bool window_border{};
-	[[maybe_unused]] static ImVec4 highlited_window_bg = LERP_GRAY(0.57f);
-	[[maybe_unused]] static f32 default_item_width{};
+	inline std::filesystem::path g_ini_file_location = AT::config::get_filepath_from_configtype_ini(util::get_executable_path(), config::file::imgui);
+	inline f32 g_font_size = 15.f;
+	inline f32 g_font_size_header_0 = 19.f;
+	inline f32 g_font_size_header_1 = 23.f;
+	inline f32 g_font_size_header_2 = 27.f;
+	inline f32 g_big_font_size = 18.f;
+	inline theme_selection g_UI_theme = theme_selection::dark;
+	inline bool g_window_border = false;
+	inline ImVec4 g_highlighted_window_bg;
 
 	GETTER_REF_FUNC(ImVec4, main_color);
 	GETTER_REF_FUNC(ImVec4, main_titlebar_color);
@@ -61,10 +64,17 @@ namespace AT::UI {
 		DEFAULT_GETTER_SETTER_ALL(bool, 	show_FPS_window);
 
 		void serialize(AT::serializer::option option);
+
+		void resize_fonts(const f32 font_size);
+
+		void resize_fonts(const f32 font_size, const f32 big_font_size, const f32 font_size_header_0, const f32 font_size_header_1, const f32 font_size_header_2);
+
 		ImFont* get_font(const std::string& name = "default");
 		ImGuiID m_viewport_ID{};
 
 	private:
+
+		void load_fonts();
 
 		// ------------------------- general -------------------------
 		ImGuiContext* 								m_context_imgui{};
