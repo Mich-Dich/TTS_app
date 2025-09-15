@@ -89,20 +89,21 @@ namespace AT {
             std::future<bool> init_future = std::async(std::launch::async, [this, &running_init]() {
                 ASSERT(m_dashboard->init(), "", "Failed to init user process")
                 running_init = false;
-                return true;                            // return true if not crashing
+                return true;                                // return true if not crashing
             });
 
             while (running_init) {
-    
-                s_window->poll_events();				// update internal state
+
+                if (!s_running) {                           // Handle early termination
+                    init_future.wait();                     // Ensure thread finishes before shutdown
+                    return;                                 // Skip main loop entirely
+                }
+
+                s_window->poll_events();				    // update internal state
                 m_renderer->draw_startup_UI(m_delta_time);
                 limit_fps();
             }
 
-            if (!s_running) {                           // Handle early termination
-                init_future.wait();                     // Ensure thread finishes before shutdown
-                return;                                 // Skip main loop entirely
-            }
 
         } else {
 

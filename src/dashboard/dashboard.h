@@ -28,6 +28,7 @@ namespace AT {
     struct section {
         std::string                 title{};
         std::vector<input_field>    input_fields{};
+        bool                        collapsed = false;
     };
 
     struct project {
@@ -81,6 +82,7 @@ namespace AT {
         void serialize(const serializer::option option);
         void save_open_projects();
         void load_project(const std::string& project_name, const std::filesystem::path& project_path);
+        std::filesystem::path get_audio_path();
 
     #ifdef PLATFORM_LINUX
         pid_t                                                           m_audio_pid = 0;

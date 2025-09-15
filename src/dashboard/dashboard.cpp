@@ -673,19 +673,19 @@ namespace AT {
 
     void dashboard::draw_project(project& project_data) {
 
-            for( auto& sec : project_data.sections) {
-                if (ImGui::CollapsingHeader(sec.title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-                    
-                    draw_section(project_data, sec);
-                }
-            }
+        u16 index = 0;
+        for(auto& sec : project_data.sections) {    
+            const auto& title = sec.title.empty() ? "Untitled Section " + util::to_string(index++) : sec.title;
+            if (ImGui::CollapsingHeader(title.c_str(), sec.collapsed ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
+                draw_section(project_data, sec);
+        }
+        
+        if (ImGui::Button("Add section")) {                                                     // Add section button
             
-            if (ImGui::Button("Add section")) {                                                     // Add section button
-                
-                project_data.sections.push_back(section{});
-                project_data.sections.back().input_fields.push_back(input_field{});
-                project_data.saved = false;
-            }
+            project_data.sections.push_back(section{});
+            project_data.sections.back().input_fields.push_back(input_field{});
+            project_data.saved = false;
+        }
     }
 
     
@@ -752,7 +752,7 @@ namespace AT {
             }
             
             ImGui::SameLine();
-            const std::filesystem::path audio_path = util::get_executable_path() / "audio" / (util::to_string(field.ID) + ".wav");
+            const std::filesystem::path audio_path = get_audio_path() / (util::to_string(field.ID) + ".wav");
             const bool has_audio = std::filesystem::exists(audio_path);
 
             if (!has_audio)      ImGui::BeginDisabled();
@@ -857,7 +857,8 @@ namespace AT {
                 VALIDATE(found, continue, "Found text corresponding to ID [" << generation_task_ID << "]", "Could not find text corresponding to ID [" << generation_task_ID << "]")
                 
                 // Generate audio
-                std::filesystem::path output_path = util::get_executable_path() / "audio" / (util::to_string(generation_task_ID) + ".wav");
+                std::filesystem::path output_path = get_audio_path() / (util::to_string(generation_task_ID) + ".wav");
+                LOG(Trace, "generating audio as [" << output_path.string() << "]")
                 std::filesystem::create_directories(output_path.parent_path());
                 bool success = call_python_generate_tts(text_to_generate, output_path.string());
                 VALIDATE(success, , "Successfully generated audio as [" << output_path.string() << "]", "Could not generate audio for [" << output_path.string() << "]")
@@ -964,7 +965,7 @@ namespace AT {
     // --------------------------------------------------------------------------------------------------------------
 
     void dashboard::play_audio(input_field& field) {
-        const std::filesystem::path audio_path = util::get_executable_path() / "audio" / (util::to_string(field.ID) + ".wav");
+        const std::filesystem::path audio_path = get_audio_path() / (util::to_string(field.ID) + ".wav");
         
     #ifdef PLATFORM_LINUX
         stop_audio(); // Stop any existing playback
@@ -1090,12 +1091,15 @@ namespace AT {
 
     void dashboard::serialize_project(project& project_data, const std::filesystem::path path, const serializer::option option) {
 
+        std::filesystem::create_directories(path.parent_path() / "audio");        // make sure audio path exists
+
         serializer::yaml(path, "project_data", option)
             .entry(KEY_VALUE(project_data.name))
             .entry(KEY_VALUE(project_data.description))
             .vector(KEY_VALUE(project_data.sections), [&](serializer::yaml& yaml, u64 x) {
 
 				yaml.entry(KEY_VALUE(project_data.sections[x].title))
+                .entry(KEY_VALUE(project_data.sections[x].collapsed))
                 .vector(KEY_VALUE(project_data.sections[x].input_fields), [&](serializer::yaml& yaml, u64 y) {
 
                     yaml.entry(KEY_VALUE(project_data.sections[x].input_fields[y].content))
@@ -1145,5 +1149,14 @@ namespace AT {
         serialize_project(loaded_project, project_path, serializer::option::load_from_file);
         m_open_projects.push_back(loaded_project);
     }
+
+    std::filesystem::path dashboard::get_audio_path() {
+
+        if (m_project_paths.contains(m_current_project))
+            return m_project_paths.at(m_current_project).parent_path() / "audio";
+        else
+            return util::get_executable_path() / "audio";
+    }
+
 
 }
