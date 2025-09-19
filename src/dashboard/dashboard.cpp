@@ -99,14 +99,11 @@ namespace AT {
         } else
             m_sidebar_status = sidebar_status::project_manager;
 
+        m_func_queue.push_back([this](){ initialize_python(); });
+
         return true;
     }
 
-
-    void dashboard::finalize_init() {
-
-        initialize_python();
-    }
 
     // shutdown will be called before any system is deinitialize
     bool dashboard::shutdown() {
@@ -168,6 +165,12 @@ namespace AT {
 
 
     void dashboard::update(f32 delta_time)  {
+
+        if (m_func_queue.size()) {
+            for (auto& func : m_func_queue)
+                func();
+            m_func_queue.clear();
+        }
 
         if (m_should_resize_font) {
 
@@ -674,9 +677,81 @@ namespace AT {
     void dashboard::draw_project(project& project_data) {
 
         u16 index = 0;
-        for(auto& sec : project_data.sections) {    
-            const auto& title = sec.title.empty() ? "Untitled Section " + util::to_string(index++) : sec.title;
-            if (ImGui::CollapsingHeader(title.c_str(), sec.collapsed ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen))
+        u16 nameless_index = 0;
+        for(auto& sec : project_data.sections) {
+
+            ImGui::PushID(index);
+            const auto& title = sec.title.empty() ? "Untitled Section " + util::to_string(nameless_index++) : sec.title;
+            const bool open = ImGui::CollapsingHeader(title.c_str(), sec.collapsed ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen);
+            sec.collapsed = !open;
+            
+            if (ImGui::BeginPopupContextItem()) {
+                // Reordering section
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                ImGui::Text("REORDER");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                
+                if (index > 0) {
+                    if (ImGui::MenuItem("Move Up", nullptr, false, true)) 
+                        m_func_queue.push_back([this, &project_data, index]() { 
+                            std::swap(project_data.sections[index], project_data.sections[index - 1]); 
+                        });
+                    
+                    if (ImGui::MenuItem("Make First", nullptr, false, true)) 
+                        m_func_queue.push_back([this, &project_data, index]() { 
+                            std::swap(project_data.sections[index], project_data.sections[0]); 
+                        });
+                } else {
+                    ImGui::BeginDisabled();
+                    ImGui::MenuItem("Move Up", nullptr, false, false);
+                    ImGui::MenuItem("Make First", nullptr, false, false);
+                    ImGui::EndDisabled();
+                }
+                
+                if (index < project_data.sections.size() - 1) {
+                    if (ImGui::MenuItem("Move Down", nullptr, false, true))
+                        m_func_queue.push_back([this, &project_data, index]() { 
+                            std::swap(project_data.sections[index], project_data.sections[index + 1]); 
+                        });
+                    
+                    if (ImGui::MenuItem("Make Last", nullptr, false, true))
+                        m_func_queue.push_back([this, &project_data, index]() { 
+                            std::swap(project_data.sections[index], project_data.sections[project_data.sections.size() - 1]); 
+                        });
+                } else {
+                    ImGui::BeginDisabled();
+                    ImGui::MenuItem("Move Down", nullptr, false, false);
+                    ImGui::MenuItem("Make Last", nullptr, false, false);
+                    ImGui::EndDisabled();
+                }
+                
+                UI::shift_cursor_pos(0, 10.f);
+                
+                // Actions section
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                ImGui::Text("ACTIONS");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                
+                if (ImGui::MenuItem("Duplicate")) 
+                    m_func_queue.push_back([this, &project_data, index]() {
+                        auto it = project_data.sections.begin() + index;
+                        project_data.sections.insert(it + 1, *it);
+                    });
+                
+                if (ImGui::MenuItem("Delete")) 
+                    m_func_queue.push_back([this, &project_data, index]() { 
+                        project_data.sections.erase(project_data.sections.begin() + index); 
+                    });
+                
+                ImGui::EndPopup();
+            }
+
+            ImGui::PopID();
+            index++;
+
+            if (open)
                 draw_section(project_data, sec);
         }
         
@@ -737,6 +812,58 @@ namespace AT {
                 field.content = buffer;
                 project_data.saved = false;
             }
+
+            if (ImGui::BeginPopupContextItem()) {
+                // Reordering section
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                ImGui::Text("REORDER");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                
+                if (i > 0) {
+                    if (ImGui::MenuItem("Make First", nullptr, false, true)) 
+                        m_func_queue.push_back([this, &section_data, i]() { 
+                            std::swap(section_data.input_fields[i], section_data.input_fields[0]); 
+                        });
+                } else {
+                    ImGui::BeginDisabled();
+                    ImGui::MenuItem("Make First", nullptr, false, false);
+                    ImGui::EndDisabled();
+                }
+                
+                if (i < project_data.sections.size() - 1) {
+                    if (ImGui::MenuItem("Make Last", nullptr, false, true))
+                        m_func_queue.push_back([this, &section_data, i]() { 
+                            std::swap(section_data.input_fields[i], section_data.input_fields[section_data.input_fields.size() - 1]); 
+                        });
+                } else {
+                    ImGui::BeginDisabled();
+                    ImGui::MenuItem("Make Last", nullptr, false, false);
+                    ImGui::EndDisabled();
+                }
+                
+                UI::shift_cursor_pos(0, 10.f);
+                
+                // Actions section
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                ImGui::Text("ACTIONS");
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                
+                if (ImGui::MenuItem("Duplicate")) 
+                    m_func_queue.push_back([this, &section_data, i]() {
+                        auto it = section_data.input_fields.begin() + i;
+                        section_data.input_fields.insert(it + 1, *it);
+                    });
+                
+                if (ImGui::MenuItem("Delete")) 
+                    m_func_queue.push_back([this, &section_data, i]() { 
+                        section_data.input_fields.erase(section_data.input_fields.begin() + i); 
+                    });
+                
+                ImGui::EndPopup();
+            }
+
 
                 
             ImGui::SameLine();
@@ -1149,6 +1276,7 @@ namespace AT {
         serialize_project(loaded_project, project_path, serializer::option::load_from_file);
         m_open_projects.push_back(loaded_project);
     }
+
 
     std::filesystem::path dashboard::get_audio_path() {
 

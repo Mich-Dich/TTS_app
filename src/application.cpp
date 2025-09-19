@@ -94,12 +94,12 @@ namespace AT {
 
             while (running_init) {
 
+                s_window->poll_events();				    // update internal state
                 if (!s_running) {                           // Handle early termination
                     init_future.wait();                     // Ensure thread finishes before shutdown
                     return;                                 // Skip main loop entirely
                 }
 
-                s_window->poll_events();				    // update internal state
                 m_renderer->draw_startup_UI(m_delta_time);
                 limit_fps();
             }
@@ -114,7 +114,7 @@ namespace AT {
             s_window->poll_events();
             start_fps_measurement();
         }
-        m_dashboard->finalize_init();
+        // m_dashboard->finalize_init();
     
         // ---------------------------------------- main loop ----------------------------------------
         while (s_running) {

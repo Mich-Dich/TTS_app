@@ -52,7 +52,6 @@ namespace AT {
         ~dashboard();
 
         bool init();
-        void finalize_init();
         void update(f32 delta_time);
         void draw(f32 delta_time);
         bool shutdown();
@@ -118,6 +117,7 @@ namespace AT {
         f32                                                             m_voice_speed = 1.2;
         bool                                                            m_auto_open_last = true;
         u16                                                             m_font_size = 15;
+        std::vector<std::function<void()>>                              m_func_queue{};
 
         std::string                                                     m_generation_status{};                          // Status messages
         std::atomic<bool>                                               m_shutting_down = false;
