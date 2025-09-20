@@ -31,8 +31,7 @@ namespace AT {
     #pragma comment(lib, "winmm.lib")
 #endif
 
-    dashboard::dashboard()
-        : m_is_generating(false) {
+    dashboard::dashboard() {
 
     #if defined(PLATFORM_LINUX)
         util::init_qt();
@@ -70,7 +69,7 @@ namespace AT {
         // Get the correct path to setup script
         const auto script_dir = util::get_executable_path() / "kokoro";
         const auto setup_script = script_dir / "setup_venv.sh";
-        VALIDATE(std::filesystem::exists(setup_script), return false, "", "setup_venv.sh not found in [" << script_dir << "]")
+        VALIDATE(std::filesystem::exists(script_dir) && std::filesystem::exists(setup_script), return false, "", "setup_venv.sh not found in [" << script_dir << "]")
         
         // Make script executable
         std::filesystem::permissions(setup_script, std::filesystem::perms::owner_exec, std::filesystem::perm_options::add);
@@ -99,7 +98,12 @@ namespace AT {
         } else
             m_sidebar_status = sidebar_status::project_manager;
 
-        m_func_queue.push_back([this](){ initialize_python(); });
+        m_func_queue.push_back([this](){ 
+            
+            initialize_python(); 
+            m_worker_should_exit = false;
+            m_worker_future = std::async(std::launch::async, &dashboard::generation_worker, this);
+        });
 
         return true;
     }
@@ -113,30 +117,19 @@ namespace AT {
         AT::UI::g_font_size = m_font_size;
         application::get().get_imgui_config_ref()->serialize(serializer::option::save_to_file);
 
+        {                                                       // reset queue to prevent prolonged shutdown
+            std::lock_guard<std::mutex> lock(m_queue_mutex);
+            m_generation_queue = {};
+        }
+        m_worker_should_exit = true;
+        m_queue_condition.notify_one();
+        if (m_worker_future.valid()) {
+            m_worker_future.wait();
+        }
+
         // Acquire GIL if Python is initialized
         if (Py_IsInitialized())
             PyGILState_Ensure();
-
-        if (m_worker_running) {                                         // Signal worker to stop
-
-            {
-                std::lock_guard<std::mutex> lock(m_queue_mutex);
-                m_generation_queue = {};
-            }
-            
-            if (m_generation_future.valid())                            // Wait for worker to finish
-                m_generation_future.wait_for(std::chrono::seconds(1));
-        }
-        
-        m_shutting_down = true;
-        if (m_is_generating) {
-
-            // Wait for a reasonable time, then detach if still running
-            if (m_generation_future.wait_for(std::chrono::seconds(1)) != std::future_status::ready) {
-                LOG(Warn, "TTS generation still running, detaching thread")
-                m_generation_future = {}; // Release the future (will detach the thread)
-            }
-        }
         
         finalize_python();
         return true;
@@ -171,13 +164,6 @@ namespace AT {
                 func();
             m_func_queue.clear();
         }
-
-        if (m_should_resize_font) {
-
-            application::get().get_imgui_config_ref()->resize_fonts(m_font_size);
-            m_should_resize_font = false;
-        }
-
 
         if (m_last_save_time.is_older_than(util::get_system_time(), m_save_interval_sec)) {
 
@@ -237,15 +223,38 @@ namespace AT {
         ImGui::BeginChild("right_panel", ImVec2(0, 0), true);
         if (ImGui::BeginTabBar("projects_tab_bar", ImGuiTabBarFlags_None)) {                        // Create tab bar for projects
             for (auto& proj : m_open_projects) {
-                if (ImGui::BeginTabItem(proj.name.c_str(), nullptr, proj.saved ? ImGuiTabItemFlags_None : ImGuiTabItemFlags_UnsavedDocument)) {                       // Create a tab for each project
+
+                bool keep_project = true;
+                ImGuiTabItemFlags tab_flags = ImGuiTabItemFlags_None;
+                if (!proj.saved) 
+                    tab_flags |= ImGuiTabItemFlags_UnsavedDocument;
+                if (proj.name == m_current_project) 
+                    tab_flags |= ImGuiTabItemFlags_SetSelected;
+                    
+                if (ImGui::BeginTabItem(proj.name.c_str(), &keep_project, tab_flags)) {                       // Create a tab for each project
 
                     ImGui::BeginChild("current_project", ImVec2(0, 0), true);
                     draw_project(proj);
                     ImGui::EndChild();
                     ImGui::EndTabItem();
+                }
 
-                    if (m_current_project != proj.name)
-                        m_current_project = proj.name;
+                if (ImGui::IsItemClicked())             // Update current project
+                    m_current_project = proj.name;
+
+                if (!keep_project) {
+                    const auto proj_name = proj.name;
+                    m_func_queue.emplace_back([this, proj_name]() {
+                        
+                        // Find the project to remove
+                        auto it = std::find_if(m_open_projects.begin(), m_open_projects.end(), [&project_name](const auto& p) { return p.name == project_name; });
+                        if (it == m_open_projects.end())
+                            return;
+                        
+                        m_open_projects.erase(it);
+                        if (m_current_project == project_name)                  // Update current project if we removed the active one
+                            m_current_project = m_open_projects.empty() ? "" : m_open_projects[0].name;
+                    });
                 }
             }
             ImGui::EndTabBar();
@@ -431,13 +440,13 @@ namespace AT {
 
                 draw_title("DISPLAY");                
                 UI::begin_table("settings", false);
-                UI::table_row_slider<u16>("Font Size", m_font_size, 10, 50, 1);
+                UI::table_row_slider<u16>("Font Size", m_font_size, 10, 25, 1);
                 if (m_font_size == AT::UI::g_font_size)
                     ImGui::BeginDisabled();
                 UI::table_row([]() { ImGui::Text("Apply new font size"); }, [this]() {
-                        if (ImGui::Button("Apply"))
-                            m_should_resize_font = true;
-                    });
+                    if (ImGui::Button("Apply"))
+                        m_func_queue.emplace_back([this]() {application::get().get_imgui_config_ref()->resize_fonts(m_font_size); });
+                });
                 if (m_font_size == AT::UI::g_font_size)
                     ImGui::EndDisabled();
                 UI::end_table();
@@ -480,6 +489,7 @@ namespace AT {
                         if (ImGui::Selectable(project_name.c_str(), is_selected, ImGuiSelectableFlags_AllowDoubleClick)) {
                             if (ImGui::IsMouseDoubleClicked(0)) {
                                 load_project(project_name, project_path);
+                                m_current_project = project_name;
                             }
                         }
 
@@ -685,7 +695,7 @@ namespace AT {
             const bool open = ImGui::CollapsingHeader(title.c_str(), sec.collapsed ? ImGuiTreeNodeFlags_None : ImGuiTreeNodeFlags_DefaultOpen);
             sec.collapsed = !open;
             
-            if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::IsItemVisible() && ImGui::BeginPopupContextItem()) {
                 // Reordering section
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                 ImGui::Text("REORDER");
@@ -813,7 +823,7 @@ namespace AT {
                 project_data.saved = false;
             }
 
-            if (ImGui::BeginPopupContextItem()) {
+            if (ImGui::IsItemVisible() && ImGui::BeginPopupContextItem()) {
                 // Reordering section
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                 ImGui::Text("REORDER");
@@ -864,7 +874,6 @@ namespace AT {
                 ImGui::EndPopup();
             }
 
-
                 
             ImGui::SameLine();
             if (ImGui::ImageButton("##generate_button", m_generate_icon->get(), icon_button_size, ImVec2(0, 0), ImVec2(1, 1), ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
@@ -875,7 +884,7 @@ namespace AT {
                     std::lock_guard<std::mutex> lock(m_queue_mutex);
                     m_generation_queue.push(field.ID);
                 }
-                generation_worker();
+                m_queue_condition.notify_one();
             }
             
             ImGui::SameLine();
@@ -932,7 +941,7 @@ namespace AT {
                 m_generation_queue.push(section_data.input_fields[i].ID);       // Add to generation queue
                 section_data.input_fields[i].generating = true;                 // set all fields to generate
             }
-            generation_worker();
+            m_queue_condition.notify_one();
         }
 
         ImGui::PopStyleColor();
@@ -945,72 +954,74 @@ namespace AT {
 
     void dashboard::generation_worker() {
 
-        m_worker_running = true;
-        m_worker_future = std::async(std::launch::async, [this]() {
+        while (!m_worker_should_exit) {
+            UUID generation_task_ID;
+            bool has_task = false;
 
-            while (true) {
+            { // Get next task
+                std::unique_lock<std::mutex> lock(m_queue_mutex);
                 
-                LOG(Trace, "Next iteration")
+                // Wait until there's a task or we're shutting down
+                m_queue_condition.wait(lock, [this]() { return !m_generation_queue.empty() || m_worker_should_exit; });
 
-                UUID generation_task_ID;
-                {                                                           // Get next task
-                    LOG(Trace, "Trying to find next task")
-                    std::lock_guard<std::mutex> lock(m_queue_mutex);
-                    if (m_generation_queue.empty()) break;
+                if (m_worker_should_exit) break;
+
+                if (!m_generation_queue.empty()) {
                     generation_task_ID = m_generation_queue.front();
                     m_generation_queue.pop();
+                    has_task = true;
                 }
-                
-                LOG(Trace, "Trying to find Corresponding string for [" << generation_task_ID << "]")
+            }
 
-                // Find Corresponding string
-                std::string text_to_generate;
-                bool found = false;
-                
-                for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
-                    for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
-                        for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
-                            if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
-                                text_to_generate = m_open_projects[project_index].sections[section_index].input_fields[field_index].content;
-                                found = true;
-                                break;
-                            }
+            if (!has_task) continue;
+
+            
+            LOG(Trace, "Trying to find Corresponding string for [" << generation_task_ID << "]")
+
+            // Find Corresponding string
+            std::string text_to_generate;
+            bool found = false;
+            
+            for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                    for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                        if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
+                            text_to_generate = m_open_projects[project_index].sections[section_index].input_fields[field_index].content;
+                            found = true;
+                            break;
                         }
-                        if (found) break;
                     }
                     if (found) break;
                 }
+                if (found) break;
+            }
 
-                VALIDATE(found, continue, "Found text corresponding to ID [" << generation_task_ID << "]", "Could not find text corresponding to ID [" << generation_task_ID << "]")
-                
-                // Generate audio
-                std::filesystem::path output_path = get_audio_path() / (util::to_string(generation_task_ID) + ".wav");
-                LOG(Trace, "generating audio as [" << output_path.string() << "]")
-                std::filesystem::create_directories(output_path.parent_path());
-                bool success = call_python_generate_tts(text_to_generate, output_path.string());
-                VALIDATE(success, , "Successfully generated audio as [" << output_path.string() << "]", "Could not generate audio for [" << output_path.string() << "]")
-                
-                // need new search because user could re-arange the fields while generating
-                found = false;
-                for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
-                    for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
-                        for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
-                            if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
-                                m_open_projects[project_index].sections[section_index].input_fields[field_index].generating = false;                     // update status
-                                found = true;
-                                break;
-                            }
+            VALIDATE(found, continue, "Found text corresponding to ID [" << generation_task_ID << "]", "Could not find text corresponding to ID [" << generation_task_ID << "]")
+            
+            // Generate audio
+            std::filesystem::path output_path = get_audio_path() / (util::to_string(generation_task_ID) + ".wav");
+            LOG(Trace, "generating audio as [" << output_path.string() << "]")
+            std::filesystem::create_directories(output_path.parent_path());
+            bool success = call_python_generate_tts(text_to_generate, output_path.string());
+            VALIDATE(success, , "Successfully generated audio as [" << output_path.string() << "]", "Could not generate audio for [" << output_path.string() << "]")
+            
+            // need new search because user could re-arange the fields while generating
+            found = false;
+            for (size_t project_index = 0; project_index < m_open_projects.size(); project_index++) {
+                for (size_t section_index = 0; section_index < m_open_projects[project_index].sections.size(); section_index++) {
+                    for (size_t field_index = 0; field_index < m_open_projects[project_index].sections[section_index].input_fields.size(); field_index++) {
+                        if (generation_task_ID == m_open_projects[project_index].sections[section_index].input_fields[field_index].ID) {
+                            m_open_projects[project_index].sections[section_index].input_fields[field_index].generating = false;                     // update status
+                            found = true;
+                            break;
                         }
-                        if (found) break;
                     }
                     if (found) break;
                 }
-                
+                if (found) break;
             }
             
-            LOG(Trace, "Worker finished")
-            m_worker_running = false;
-        });
+        }
     }
 
 
@@ -1270,6 +1281,12 @@ namespace AT {
 
 
     void dashboard::load_project(const std::string& project_name, const std::filesystem::path& project_path) {
+
+        for (auto& proj : m_open_projects)
+            if (proj.name == project_name)
+                return;                         // return when project already loaded
+
+        VALIDATE(std::filesystem::exists(project_path), return, "Found project", "project at location [" << project_path.string() << "] does not exist")
 
         LOG(Trace, "open [" << project_name << "] from [" << project_path << "]")
         project loaded_project{};

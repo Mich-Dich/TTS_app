@@ -44,6 +44,12 @@ namespace AT {
         project_manager,
     };
 
+    struct popup {
+        logger::severity severity = logger::severity::Trace;
+        std::string title{};
+        std::string message{};
+    };
+
 
     class dashboard {
     public:
@@ -89,26 +95,23 @@ namespace AT {
         std::thread                                                     m_audio_monitor;
     #endif                              
         u64                                                             m_current_audio_field = 0;
-
-        std::atomic<bool>                                               m_is_generating = false;
-        std::future<void>                                               m_worker_future;
-        std::future<bool>                                               m_generation_future;
-
         std::string                                                     m_current_project{};
         std::vector<project>                                            m_open_projects{};               // projects currently opened
         std::unordered_map<std::string, std::filesystem::path>          m_project_paths{};
 
         sidebar_status                                                  m_sidebar_status = sidebar_status::project_manager;     // start at PM because that is always the first step
+        std::vector<popup>                                              m_popups{};
 
         std::queue<UUID>                                                m_generation_queue{};
         std::mutex                                                      m_queue_mutex;
-        std::atomic<bool>                                               m_worker_running = false;
+        std::future<void>                                               m_worker_future;
+        std::atomic<bool>                                               m_worker_should_exit{false};
+        std::condition_variable                                         m_queue_condition;
 
         PyThreadState*                                                  m_python_thread_state = nullptr;
         PyObject*                                                       m_py_module = nullptr;
         PyObject*                                                       m_py_generate_tts_function = nullptr;
 
-        bool                                                            m_should_resize_font = false;
         bool                                                            m_auto_save = true;
         system_time                                                     m_last_save_time;
         u32                                                             m_save_interval_sec = 300;
@@ -120,7 +123,6 @@ namespace AT {
         std::vector<std::function<void()>>                              m_func_queue{};
 
         std::string                                                     m_generation_status{};                          // Status messages
-        std::atomic<bool>                                               m_shutting_down = false;
 		ref<image>						                                m_generate_icon;
 		ref<image>						                                m_audio_icon;
 		ref<image>						                                m_stop_icon;

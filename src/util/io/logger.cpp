@@ -322,9 +322,9 @@ namespace AT::logger {
                     std::lock_guard<std::mutex> lock(s_general_mutex);
                     
                     if (s_thread_labels.find(message.thread_id) != s_thread_labels.end())
-                    WRITE_TO_FILE("[LOGGER] Thread with ID: [" << message.thread_id << "] already has label [" << s_thread_labels[message.thread_id] << "] registered. Overriding with the label: [" << message.message << "]\n")
+                        WRITE_TO_FILE("[LOGGER] Thread with ID: [" << message.thread_id << "] already has label [" << s_thread_labels[message.thread_id] << "] registered. Overriding with the label: [" << message.message << "]\n")
                     else
-                    WRITE_TO_FILE("[LOGGER] Registering Thread-ID: [" << message.thread_id << "] with the label: [" << message.message << "]\n")
+                        WRITE_TO_FILE("[LOGGER] Registering Thread-ID: [" << message.thread_id << "] with the label: [" << message.message << "]\n")
 
                     s_thread_labels[message.thread_id] = message.message;
                 
